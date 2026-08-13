@@ -1,0 +1,22 @@
+# fastapi git ignore file
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+# C extensions
+*.so
+
+# Model files
+*.h5
+*.pt
+*.pth
+*.ckpt
+*.bin
+*.onnx
+models/
+
+.venv/
+.env
+.env/
+venv/
+env/
