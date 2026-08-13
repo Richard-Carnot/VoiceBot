@@ -1,0 +1,912 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Carnot Research — Developer Portal & API Playground</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <link rel="icon" href="https://carnotresearch.com/assets/logo/carnot-logo.png" type="image/png">
+</head>
+<body class="light-theme">
+
+  <!-- ── Carnot Research Login Screen ── -->
+  <div class="login-overlay" id="loginScreen">
+    <div class="login-card">
+      <div class="login-header">
+        <div class="login-logo-box">
+          <img src="https://carnotresearch.com/assets/logo/carnot-logo.png" alt="Carnot Logo" class="login-logo-img" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
+          <span class="logo-fallback-icon" style="display:none;"><i class="fa-solid fa-atom"></i></span>
+        </div>
+        <h2>Carnot Research</h2>
+        <p>Enterprise On-Premise AI Gateway & Developer Portal</p>
+      </div>
+
+      <form id="loginForm" class="login-form">
+        <div class="form-group">
+          <label><i class="fa-solid fa-user"></i> Username</label>
+          <input type="text" id="loginUsername" placeholder="Enter username" autocomplete="off" required>
+        </div>
+
+        <div class="form-group">
+          <label><i class="fa-solid fa-lock"></i> Password</label>
+          <input type="password" id="loginPassword" placeholder="Enter password" required>
+        </div>
+
+        <div class="login-error-msg hidden" id="loginError">
+          <i class="fa-solid fa-triangle-exclamation"></i> Invalid username or password.
+        </div>
+
+        <button type="submit" class="btn btn-primary btn-block btn-lg" id="btnLoginSubmit">
+          <i class="fa-solid fa-right-to-bracket"></i> Sign In to Portal
+        </button>
+      </form>
+    </div>
+  </div>
+
+  <!-- ── Main Portal Container ── -->
+  <div class="portal-container hidden" id="portalContainer">
+    
+    <!-- Mobile Sidebar Backdrop -->
+    <div class="sidebar-backdrop" id="sidebarBackdrop"></div>
+
+    <!-- ── Sidebar Navigation (Carnot Research Branding) ── -->
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-header">
+        <div class="logo-box">
+          <div class="logo-icon-wrapper">
+            <img src="https://carnotresearch.com/assets/logo/carnot-logo.png" alt="Carnot Logo" class="logo-img" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
+            <span class="logo-fallback-icon" style="display:none;"><i class="fa-solid fa-atom"></i></span>
+          </div>
+          <div class="logo-title-group">
+            <span class="logo-text">Carnot Research</span>
+            <span class="logo-sub">On-Premise AI Platform</span>
+          </div>
+        </div>
+        <button class="sidebar-close-btn" id="sidebarCloseBtn"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+
+      <nav class="sidebar-menu">
+        <div class="menu-label">Build</div>
+        <a href="#overview" class="menu-item active" data-tab="overview">
+          <i class="fa-solid fa-house"></i> Platform Overview
+        </a>
+        <a href="#api-keys" class="menu-item" data-tab="api-keys">
+          <i class="fa-solid fa-key"></i> API Keys
+        </a>
+        <a href="#model-catalogue" class="menu-item" data-tab="model-catalogue">
+          <i class="fa-solid fa-cubes"></i> Model Catalogue
+        </a>
+
+        <div class="menu-label">API Playground</div>
+        <a href="#tts" class="menu-item" data-tab="tts">
+          <i class="fa-solid fa-volume-high"></i> Text to Speech
+        </a>
+        <a href="#stt" class="menu-item" data-tab="stt">
+          <i class="fa-solid fa-microphone-lines"></i> Speech to Text
+        </a>
+        <a href="#translate" class="menu-item" data-tab="translate">
+          <i class="fa-solid fa-language"></i> Translate
+        </a>
+
+        <div class="menu-label">System</div>
+        <a href="#api-status" class="menu-item" data-tab="api-status">
+          <i class="fa-solid fa-chart-line"></i> Telemetry & Status
+        </a>
+      </nav>
+
+      <div class="sidebar-footer">
+        <div class="gpu-pill">
+          <span class="gpu-dot"></span>
+          <span class="gpu-name">NVIDIA L4 (24GB VRAM)</span>
+        </div>
+        <div class="user-profile" id="userProfileBtn">
+          <div class="user-avatar" id="avatarLetters">CR</div>
+          <div class="user-info">
+            <span class="user-name" id="userNameDisplay">carnot</span>
+            <span class="user-role">Enterprise GPU Tier</span>
+          </div>
+          <button class="logout-btn" id="btnLogout" title="Sign Out"><i class="fa-solid fa-arrow-right-from-bracket"></i></button>
+        </div>
+      </div>
+    </aside>
+
+    <!-- ── Main Content Area ── -->
+    <main class="main-content">
+      
+      <!-- Minimalist Top Header Bar -->
+      <header class="top-header">
+        <div class="header-left">
+          <button class="sidebar-toggle-btn" id="sidebarToggle" title="Open Navigation Menu">
+            <i class="fa-solid fa-bars"></i>
+          </button>
+          <h1 class="page-title" id="pageTitle">Text to Speech Playground</h1>
+        </div>
+
+        <div class="header-right">
+          <!-- Minimalist Theme Selector -->
+          <div class="theme-selector">
+            <button class="theme-btn active" data-theme="light" title="Light Theme"><i class="fa-solid fa-sun"></i><span> Light</span></button>
+            <button class="theme-btn" data-theme="dark" title="Dark Theme"><i class="fa-solid fa-moon"></i><span> Dark</span></button>
+            <button class="theme-btn" data-theme="cyber" title="Cyber Theme"><i class="fa-solid fa-bolt"></i><span> Cyber</span></button>
+          </div>
+
+          <!-- Key Dropdown -->
+          <div class="key-selector">
+            <i class="fa-solid fa-key"></i>
+            <select id="activeKeyDropdown">
+              <option value="vx_live_master">Master Key (vx_live_...)</option>
+            </select>
+          </div>
+
+          <button class="btn btn-primary btn-docs-header" id="btnApiRef" onclick="switchTab('documentation')"><i class="fa-solid fa-book"></i><span> Docs</span></button>
+        </div>
+      </header>
+
+      <!-- ── TAB 1: OVERVIEW ── -->
+      <section class="tab-pane hidden" id="tab-overview">
+        <div class="hero-banner">
+          <div class="hero-text">
+            <h2>Carnot Research — Accelerated Indic Speech & Translation AI Platform</h2>
+            <p>High-throughput, ultra-low latency local GPU inference powered by NVIDIA L4 for 22+ Indic languages and full multi-speaker voice synthesis. Built for enterprise and government on-premise AI deployments.</p>
+          </div>
+          <div class="hero-actions">
+            <button class="btn btn-primary btn-lg" onclick="switchTab('tts')"><i class="fa-solid fa-play"></i> Try TTS Playground</button>
+            <button class="btn btn-secondary btn-lg" onclick="switchTab('api-keys')"><i class="fa-solid fa-key"></i> Get API Key</button>
+          </div>
+        </div>
+
+        <div class="stats-grid">
+          <div class="stat-card">
+            <div class="stat-icon"><i class="fa-solid fa-bolt"></i></div>
+            <div class="stat-val">474 ms</div>
+            <div class="stat-label">Avg STT Inference (3s Audio)</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon"><i class="fa-solid fa-wave-square"></i></div>
+            <div class="stat-val">44.1 kHz</div>
+            <div class="stat-label">Neural Audio Sample Rate</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon"><i class="fa-solid fa-microchip"></i></div>
+            <div class="stat-val">7.1 GB</div>
+            <div class="stat-label">NVIDIA L4 VRAM Allocation</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon"><i class="fa-solid fa-globe"></i></div>
+            <div class="stat-val">24 Locales</div>
+            <div class="stat-label">Supported Language Locales</div>
+          </div>
+        </div>
+
+        <h3 class="section-heading">Featured Carnot AI Engines</h3>
+        <div class="models-grid">
+          <div class="model-card" onclick="switchTab('tts')">
+            <div class="model-tag">Text-to-Speech</div>
+            <h4>CR_voice1</h4>
+            <p>Multilingual, multi-speaker voice synthesis engine supporting natural voice controls, pacing, and 24 language locales.</p>
+            <div class="model-meta"><span><i class="fa-solid fa-bolt"></i> CR_voice Series</span> <span>CUDA 12.4</span></div>
+          </div>
+          <div class="model-card" onclick="switchTab('stt')">
+            <div class="model-tag">Speech-to-Text</div>
+            <h4>CR_stt1</h4>
+            <p>High-accuracy streaming Automatic Speech Recognition engine with low-latency CTC decoding and VAD silence detection.</p>
+            <div class="model-meta"><span><i class="fa-solid fa-bolt"></i> CR_stt Series</span> <span>CUDA 12.4</span></div>
+          </div>
+          <div class="model-card" onclick="switchTab('translate')">
+            <div class="model-tag">Translation</div>
+            <h4>CR_trans</h4>
+            <p>State-of-the-art English ↔ 22 Indic Languages Neural Machine Translation engine in FP16 precision.</p>
+            <div class="model-meta"><span><i class="fa-solid fa-bolt"></i> CR_trans Series</span> <span>CUDA 12.4</span></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ── TAB 2: MODEL CATALOGUE ── -->
+      <section class="tab-pane hidden" id="tab-model-catalogue">
+        <div class="catalogue-header">
+          <div>
+            <h2>Model Catalogue & AI Engine Profiles</h2>
+            <p>Explore all Carnot local AI model engines running live on NVIDIA L4 GPU hardware.</p>
+          </div>
+          <div class="filter-pills">
+            <button class="filter-btn active" data-filter="all">All Models (7)</button>
+            <button class="filter-btn" data-filter="tts">Voice & Synthesis (3)</button>
+            <button class="filter-btn" data-filter="stt">Speech Recognition (3)</button>
+            <button class="filter-btn" data-filter="translation">Translation (1)</button>
+          </div>
+        </div>
+
+        <div class="models-grid full-catalogue">
+          
+          <!-- Model 1: CR_voice1 -->
+          <div class="model-card-lg" data-category="tts" onclick="switchTab('tts')">
+            <div class="card-badge tts">Text-to-Speech</div>
+            <h3>CR_voice1</h3>
+            <p>Fully expressive neural TTS engine trained on 24 Indic language locales. Supports speaker gender, emotion control, and variable pacing.</p>
+            <div class="specs-row">
+              <div class="spec-item"><span class="spec-label">Engine Series</span><span class="spec-val">CR_voice</span></div>
+              <div class="spec-item"><span class="spec-label">Precision</span><span class="spec-val">BFloat16 / FP32</span></div>
+              <div class="spec-item"><span class="spec-label">Sample Rate</span><span class="spec-val">44,100 Hz</span></div>
+              <div class="spec-item"><span class="spec-label">Device</span><span class="spec-val">CUDA 12.4 (GPU)</span></div>
+            </div>
+            <button class="btn btn-primary btn-sm"><i class="fa-solid fa-play"></i> Open Playground</button>
+          </div>
+
+          <!-- Model 2: CR_voice2 -->
+          <div class="model-card-lg" data-category="tts" onclick="switchTab('tts')">
+            <div class="card-badge tts">Text-to-Speech</div>
+            <h3>CR_voice2</h3>
+            <p>Conversational streaming TTS engine optimized for real-time conversational agents and low latency audio output.</p>
+            <div class="specs-row">
+              <div class="spec-item"><span class="spec-label">Engine Series</span><span class="spec-val">CR_voice</span></div>
+              <div class="spec-item"><span class="spec-label">Precision</span><span class="spec-val">Float16</span></div>
+              <div class="spec-item"><span class="spec-label">Sample Rate</span><span class="spec-val">22,050 Hz</span></div>
+              <div class="spec-item"><span class="spec-label">Device</span><span class="spec-val">CUDA 12.4 (GPU)</span></div>
+            </div>
+            <button class="btn btn-primary btn-sm"><i class="fa-solid fa-play"></i> Open Playground</button>
+          </div>
+
+          <!-- Model 3: CR_voice3 -->
+          <div class="model-card-lg" data-category="tts" onclick="switchTab('tts')">
+            <div class="card-badge tts">Text-to-Speech</div>
+            <h3>CR_voice3</h3>
+            <p>Ultra-low latency streaming voice engine tuned for IVR telephony, voice bots, and high-frequency real-time calls.</p>
+            <div class="specs-row">
+              <div class="spec-item"><span class="spec-label">Engine Series</span><span class="spec-val">CR_voice</span></div>
+              <div class="spec-item"><span class="spec-label">Precision</span><span class="spec-val">Float16</span></div>
+              <div class="spec-item"><span class="spec-label">Sample Rate</span><span class="spec-val">16,000 Hz</span></div>
+              <div class="spec-item"><span class="spec-label">Device</span><span class="spec-val">CUDA 12.4 (GPU)</span></div>
+            </div>
+            <button class="btn btn-primary btn-sm"><i class="fa-solid fa-play"></i> Open Playground</button>
+          </div>
+
+          <!-- Model 4: CR_stt1 -->
+          <div class="model-card-lg" data-category="stt" onclick="switchTab('stt')">
+            <div class="card-badge stt">Speech-to-Text</div>
+            <h3>CR_stt1</h3>
+            <p>Multilingual speech recognition engine supporting 22 Indic languages with streaming WebSocket chunking and VAD silence filtering.</p>
+            <div class="specs-row">
+              <div class="spec-item"><span class="spec-label">Engine Series</span><span class="spec-val">CR_stt</span></div>
+              <div class="spec-item"><span class="spec-label">Architecture</span><span class="spec-val">Streaming CTC</span></div>
+              <div class="spec-item"><span class="spec-label">Latency</span><span class="spec-val">474 ms / 3s Audio</span></div>
+              <div class="spec-item"><span class="spec-label">Device</span><span class="spec-val">CUDA 12.4 (GPU)</span></div>
+            </div>
+            <button class="btn btn-primary btn-sm"><i class="fa-solid fa-play"></i> Open Playground</button>
+          </div>
+
+          <!-- Model 5: CR_stt2 -->
+          <div class="model-card-lg" data-category="stt" onclick="switchTab('stt')">
+            <div class="card-badge stt">Speech-to-Text</div>
+            <h3>CR_stt2</h3>
+            <p>Distilled transformer ASR engine delivering ultra-fast speech-to-text decoding speed with high precision word accuracy.</p>
+            <div class="specs-row">
+              <div class="spec-item"><span class="spec-label">Engine Series</span><span class="spec-val">CR_stt</span></div>
+              <div class="spec-item"><span class="spec-label">Architecture</span><span class="spec-val">Encoder-Decoder</span></div>
+              <div class="spec-item"><span class="spec-label">Speedup</span><span class="spec-val">6.0x Realtime</span></div>
+              <div class="spec-item"><span class="spec-label">Device</span><span class="spec-val">CUDA 12.4 (GPU)</span></div>
+            </div>
+            <button class="btn btn-primary btn-sm"><i class="fa-solid fa-play"></i> Open Playground</button>
+          </div>
+
+          <!-- Model 6: CR_stt3 -->
+          <div class="model-card-lg" data-category="stt" onclick="switchTab('stt')">
+            <div class="card-badge stt">Speech-to-Text</div>
+            <h3>CR_stt3</h3>
+            <p>Compact speech recognition engine tuned specifically for domain-specific vocabulary and noisy background environments.</p>
+            <div class="specs-row">
+              <div class="spec-item"><span class="spec-label">Engine Series</span><span class="spec-val">CR_stt</span></div>
+              <div class="spec-item"><span class="spec-label">Architecture</span><span class="spec-val">Conformer RNN-T</span></div>
+              <div class="spec-item"><span class="spec-label">Precision</span><span class="spec-val">FP16</span></div>
+              <div class="spec-item"><span class="spec-label">Device</span><span class="spec-val">CUDA 12.4 (GPU)</span></div>
+            </div>
+            <button class="btn btn-primary btn-sm"><i class="fa-solid fa-play"></i> Open Playground</button>
+          </div>
+
+          <!-- Model 7: CR_trans -->
+          <div class="model-card-lg" data-category="translation" onclick="switchTab('translate')">
+            <div class="card-badge trans">Translation</div>
+            <h3>CR_trans</h3>
+            <p>Unified Neural Machine Translation engine translating between English and 22 Indic languages with direct Indic-to-Indic routing.</p>
+            <div class="specs-row">
+              <div class="spec-item"><span class="spec-label">Engine Series</span><span class="spec-val">CR_trans</span></div>
+              <div class="spec-item"><span class="spec-label">Precision</span><span class="spec-val">Float16</span></div>
+              <div class="spec-item"><span class="spec-label">Avg Latency</span><span class="spec-val">190 - 470 ms</span></div>
+              <div class="spec-item"><span class="spec-label">Device</span><span class="spec-val">CUDA 12.4 (GPU)</span></div>
+            </div>
+            <button class="btn btn-primary btn-sm"><i class="fa-solid fa-play"></i> Open Playground</button>
+          </div>
+
+        </div>
+      </section>
+
+      <!-- ── TAB 3: TEXT TO SPEECH PLAYGROUND ── -->
+      <section class="tab-pane" id="tab-tts">
+        <div class="playground-layout">
+          
+          <!-- Left Config Panel -->
+          <div class="playground-controls">
+            
+            <div class="control-row col-2">
+              <div class="form-group">
+                <label>Type</label>
+                <select id="tts-type">
+                  <option value="rest">REST Stream</option>
+                  <option value="websocket">WebSocket Stream</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label>Model Engine</label>
+                <select id="tts-model">
+                  <option value="CR_voice1">CR_voice1 (44.1kHz Multi-Speaker)</option>
+                  <option value="CR_voice2">CR_voice2 (22kHz Conversational)</option>
+                  <option value="CR_voice3">CR_voice3 (16kHz Realtime Telephony)</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="control-row col-2">
+              <div class="form-group">
+                <label>Voice Preset</label>
+                <select id="tts-voice">
+                  <option value="default">✨ Default (Natural Balanced)</option>
+                  <option value="shubh">🟢 Shubh (Expressive Male)</option>
+                  <option value="bella">🟣 Bella (Soft Female)</option>
+                  <option value="priya">🌸 Priya (Clear Female Anchor)</option>
+                  <option value="rahul">📘 Rahul (Deep Male News)</option>
+                  <option value="ananya">🌟 Ananya (Friendly Warm Female)</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label>Target Language (24 Locales)</label>
+                <select id="tts-lang">
+                  <option value="hi-IN">Hindi (hi-IN)</option>
+                  <option value="ml-IN">Malayalam (ml-IN)</option>
+                  <option value="ta-IN">Tamil (ta-IN)</option>
+                  <option value="te-IN">Telugu (te-IN)</option>
+                  <option value="kn-IN">Kannada (kn-IN)</option>
+                  <option value="bn-IN">Bengali (bn-IN)</option>
+                  <option value="gu-IN">Gujarati (gu-IN)</option>
+                  <option value="mr-IN">Marathi (mr-IN)</option>
+                  <option value="pa-IN">Punjabi (pa-IN)</option>
+                  <option value="or-IN">Odia (or-IN)</option>
+                  <option value="as-IN">Assamese (as-IN)</option>
+                  <option value="ur-IN">Urdu (ur-IN)</option>
+                  <option value="ne-IN">Nepali (ne-IN)</option>
+                  <option value="sa-IN">Sanskrit (sa-IN)</option>
+                  <option value="mai-IN">Maithili (mai-IN)</option>
+                  <option value="doi-IN">Dogri (doi-IN)</option>
+                  <option value="mni-IN">Manipuri (mni-IN)</option>
+                  <option value="brx-IN">Bodo (brx-IN)</option>
+                  <option value="sat-IN">Santali (sat-IN)</option>
+                  <option value="kok-IN">Konkani (kok-IN)</option>
+                  <option value="sd-IN">Sindhi (sd-IN)</option>
+                  <option value="en-IN">English (India - en-IN)</option>
+                  <option value="en-US">English (US - en-US)</option>
+                  <option value="en-GB">English (UK - en-GB)</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label>Input Text *</label>
+              <textarea id="tts-input" rows="4" placeholder="Enter text to synthesize...">नमस्ते, कार्नोट रीसर्चे एआई प्लेटफॉर्म में आपका स्वागत है।</textarea>
+              <div class="char-count"><span id="tts-char-num">56</span>/3500 characters</div>
+            </div>
+
+            <div class="control-row col-2">
+              <div class="form-group">
+                <label>Pace (<span id="tts-pace-val">1.00x</span>)</label>
+                <input type="range" id="tts-pace" min="0.5" max="2.0" step="0.05" value="1.0">
+              </div>
+              <div class="form-group">
+                <label>Sample Rate (Hz)</label>
+                <select id="tts-samplerate">
+                  <option value="44100">44.1k (High Fidelity)</option>
+                  <option value="22050">22k (Standard)</option>
+                  <option value="16000">16k (Voice Call)</option>
+                </select>
+              </div>
+            </div>
+
+            <button class="btn btn-primary btn-block btn-lg" id="btnRunTts">
+              <i class="fa-solid fa-circle-play"></i> Run Request
+            </button>
+          </div>
+
+          <!-- Right Code & Output Panel -->
+          <div class="playground-output">
+            <div class="output-header-tabs">
+              <button class="tab-btn active" data-view="code"><i class="fa-solid fa-code"></i> Code</button>
+              <button class="tab-btn" data-view="result"><i class="fa-solid fa-volume-high"></i> Output</button>
+            </div>
+
+            <!-- Code Subview -->
+            <div class="subview" id="tts-code-view">
+              <div class="lang-selector">
+                <button class="lang-tab active" data-lang="js">JavaScript</button>
+                <button class="lang-tab" data-lang="python">Python</button>
+                <button class="lang-tab" data-lang="curl">cURL</button>
+                <button class="btn-copy" id="btnCopyCode"><i class="fa-regular fa-copy"></i> Copy Code</button>
+              </div>
+              <pre class="code-block"><code id="tts-code-snippet">// Generated code loading...</code></pre>
+            </div>
+
+            <!-- Result Subview -->
+            <div class="subview hidden" id="tts-result-view">
+              <div class="result-box">
+                <div class="audio-player-card">
+                  <div class="player-status">
+                    <span class="status-indicator"></span>
+                    <span id="tts-player-status">Audio Output Ready</span>
+                    <span class="latency-badge" id="tts-latency-tag">-- ms</span>
+                  </div>
+
+                  <audio id="ttsAudioElement" controls style="width: 100%; margin-top: 15px;"></audio>
+                  
+                  <div class="wave-visualizer">
+                    <span class="wave-bar"></span><span class="wave-bar"></span><span class="wave-bar"></span>
+                    <span class="wave-bar"></span><span class="wave-bar"></span><span class="wave-bar"></span>
+                    <span class="wave-bar"></span><span class="wave-bar"></span><span class="wave-bar"></span>
+                  </div>
+                </div>
+
+                <div class="payload-preview">
+                  <div class="preview-title">Response Payload</div>
+                  <pre id="tts-json-response">{}</pre>
+                </div>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </section>
+
+      <!-- ── TAB 4: SPEECH TO TEXT PLAYGROUND ── -->
+      <section class="tab-pane hidden" id="tab-stt">
+        <div class="playground-layout">
+          
+          <!-- Left Config Panel -->
+          <div class="playground-controls">
+            <div class="control-row col-2">
+              <div class="form-group">
+                <label>Type</label>
+                <select id="stt-type">
+                  <option value="rest">REST Upload</option>
+                  <option value="websocket">WebSocket Stream</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label>Model Engine</label>
+                <select id="stt-model">
+                  <option value="CR_stt1">CR_stt1 (Conformer Streaming ASR)</option>
+                  <option value="CR_stt2">CR_stt2 (Fast Transformer ASR)</option>
+                  <option value="CR_stt3">CR_stt3 (Base Low-VRAM ASR)</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label>Audio Input Source</label>
+              <div class="audio-source-toggle">
+                <button class="source-btn active" id="btnMicSource"><i class="fa-solid fa-microphone"></i> Record Mic</button>
+                <button class="source-btn" id="btnFileSource"><i class="fa-solid fa-file-audio"></i> Upload Audio File</button>
+              </div>
+            </div>
+
+            <!-- Mic Box -->
+            <div class="mic-recorder-box" id="micBox">
+              <div class="record-visualizer" id="recordVisualizer">
+                <i class="fa-solid fa-microphone mic-pulse-icon"></i>
+              </div>
+              <div class="record-timer" id="recordTimer">00:00</div>
+              <div class="mic-actions">
+                <button class="btn btn-danger" id="btnStartRecord"><i class="fa-solid fa-circle"></i> Start Recording</button>
+                <button class="btn btn-secondary hidden" id="btnStopRecord"><i class="fa-solid fa-square"></i> Stop</button>
+              </div>
+            </div>
+
+            <!-- File Upload Box -->
+            <div class="file-dropzone hidden" id="fileBox">
+              <i class="fa-solid fa-cloud-arrow-up drop-icon"></i>
+              <p>Drop audio file here or click to browse</p>
+              <span class="file-types">Supports WAV, MP3, FLAC, OGG (Max 25MB)</span>
+              <input type="file" id="sttFileInput" accept="audio/*" class="hidden-file-input">
+              <div class="selected-file-name" id="selectedFileName"></div>
+            </div>
+
+            <div class="control-row col-2" style="margin-top: 15px;">
+              <div class="form-group">
+                <label>Language Code (22 Languages)</label>
+                <select id="stt-lang">
+                  <option value="hi-IN">Hindi (hi-IN)</option>
+                  <option value="ml-IN">Malayalam (ml-IN)</option>
+                  <option value="ta-IN">Tamil (ta-IN)</option>
+                  <option value="te-IN">Telugu (te-IN)</option>
+                  <option value="kn-IN">Kannada (kn-IN)</option>
+                  <option value="bn-IN">Bengali (bn-IN)</option>
+                  <option value="gu-IN">Gujarati (gu-IN)</option>
+                  <option value="mr-IN">Marathi (mr-IN)</option>
+                  <option value="pa-IN">Punjabi (pa-IN)</option>
+                  <option value="or-IN">Odia (or-IN)</option>
+                  <option value="as-IN">Assamese (as-IN)</option>
+                  <option value="ur-IN">Urdu (ur-IN)</option>
+                  <option value="ne-IN">Nepali (ne-IN)</option>
+                  <option value="sa-IN">Sanskrit (sa-IN)</option>
+                  <option value="mai-IN">Maithili (mai-IN)</option>
+                  <option value="doi-IN">Dogri (doi-IN)</option>
+                  <option value="mni-IN">Manipuri (mni-IN)</option>
+                  <option value="brx-IN">Bodo (brx-IN)</option>
+                  <option value="sat-IN">Santali (sat-IN)</option>
+                  <option value="kok-IN">Konkani (kok-IN)</option>
+                  <option value="sd-IN">Sindhi (sd-IN)</option>
+                  <option value="en-IN">English (en-IN)</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label>Decoder Mode</label>
+                <select id="stt-mode">
+                  <option value="ctc">CTC (Low Latency)</option>
+                  <option value="rnnt">RNN-T (High Accuracy)</option>
+                </select>
+              </div>
+            </div>
+
+            <button class="btn btn-primary btn-block btn-lg" id="btnRunStt">
+              <i class="fa-solid fa-circle-play"></i> Run Request
+            </button>
+          </div>
+
+          <!-- Right Code & Output Panel -->
+          <div class="playground-output">
+            <div class="output-header-tabs">
+              <button class="tab-btn active" data-view="code"><i class="fa-solid fa-code"></i> Code</button>
+              <button class="tab-btn" data-view="result"><i class="fa-solid fa-file-lines"></i> Output</button>
+            </div>
+
+            <!-- Code Subview -->
+            <div class="subview" id="stt-code-view">
+              <div class="lang-selector">
+                <button class="lang-tab active" data-lang="js">JavaScript</button>
+                <button class="lang-tab" data-lang="python">Python</button>
+                <button class="lang-tab" data-lang="curl">cURL</button>
+                <button class="btn-copy" id="btnCopySttCode"><i class="fa-regular fa-copy"></i> Copy Code</button>
+              </div>
+              <pre class="code-block"><code id="stt-code-snippet">// STT Code...</code></pre>
+            </div>
+
+            <!-- Result Subview -->
+            <div class="subview hidden" id="stt-result-view">
+              <div class="result-box">
+                <div class="transcript-card">
+                  <div class="card-title-bar">
+                    <span><i class="fa-solid fa-quote-left"></i> Transcribed Speech</span>
+                    <span class="latency-badge" id="stt-latency-tag">-- ms</span>
+                  </div>
+                  <div class="transcript-text" id="stt-transcript-out">Click 'Run Request' to process recorded audio.</div>
+                </div>
+
+                <div class="payload-preview">
+                  <div class="preview-title">Response Payload</div>
+                  <pre id="stt-json-response">{}</pre>
+                </div>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </section>
+
+      <!-- ── TAB 5: TRANSLATE PLAYGROUND ── -->
+      <section class="tab-pane hidden" id="tab-translate">
+        <div class="playground-layout">
+          
+          <!-- Left Config Panel -->
+          <div class="playground-controls">
+            <div class="control-row col-2">
+              <div class="form-group">
+                <label>Source Language *</label>
+                <select id="trans-src">
+                  <option value="English">English</option>
+                  <option value="Hindi">Hindi</option>
+                  <option value="Malayalam">Malayalam</option>
+                  <option value="Tamil">Tamil</option>
+                  <option value="Telugu">Telugu</option>
+                  <option value="Kannada">Kannada</option>
+                  <option value="Bengali">Bengali</option>
+                  <option value="Gujarati">Gujarati</option>
+                  <option value="Marathi">Marathi</option>
+                  <option value="Punjabi">Punjabi</option>
+                  <option value="Assamese">Assamese</option>
+                  <option value="Odia">Odia</option>
+                  <option value="Urdu">Urdu</option>
+                  <option value="Nepali">Nepali</option>
+                  <option value="Sanskrit">Sanskrit</option>
+                  <option value="Maithili">Maithili</option>
+                  <option value="Dogri">Dogri</option>
+                  <option value="Manipuri">Manipuri</option>
+                  <option value="Bodo">Bodo</option>
+                  <option value="Santali">Santali</option>
+                  <option value="Gom">Gom (Konkani)</option>
+                  <option value="Kashmiri">Kashmiri</option>
+                  <option value="Sindhi">Sindhi</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label>Target Language *</label>
+                <select id="trans-tgt">
+                  <option value="Hindi">Hindi</option>
+                  <option value="English">English</option>
+                  <option value="Malayalam">Malayalam</option>
+                  <option value="Tamil">Tamil</option>
+                  <option value="Telugu">Telugu</option>
+                  <option value="Kannada">Kannada</option>
+                  <option value="Bengali">Bengali</option>
+                  <option value="Gujarati">Gujarati</option>
+                  <option value="Marathi">Marathi</option>
+                  <option value="Punjabi">Punjabi</option>
+                  <option value="Assamese">Assamese</option>
+                  <option value="Odia">Odia</option>
+                  <option value="Urdu">Urdu</option>
+                  <option value="Nepali">Nepali</option>
+                  <option value="Sanskrit">Sanskrit</option>
+                  <option value="Maithili">Maithili</option>
+                  <option value="Dogri">Dogri</option>
+                  <option value="Manipuri">Manipuri</option>
+                  <option value="Bodo">Bodo</option>
+                  <option value="Santali">Santali</option>
+                  <option value="Gom">Gom (Konkani)</option>
+                  <option value="Kashmiri">Kashmiri</option>
+                  <option value="Sindhi">Sindhi</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label>Model Engine</label>
+              <select id="trans-model">
+                <option value="CR_trans">CR_trans (Neural Indic Translation)</option>
+              </select>
+            </div>
+
+            <div class="form-group">
+              <label>Input Text *</label>
+              <textarea id="trans-input" rows="5" placeholder="Enter text to translate...">Hello, welcome to Carnot Research real-time voice translation pipeline.</textarea>
+            </div>
+
+            <button class="btn btn-primary btn-block btn-lg" id="btnRunTranslate">
+              <i class="fa-solid fa-circle-play"></i> Run Request
+            </button>
+          </div>
+
+          <!-- Right Code & Output Panel -->
+          <div class="playground-output">
+            <div class="output-header-tabs">
+              <button class="tab-btn active" data-view="code"><i class="fa-solid fa-code"></i> Code</button>
+              <button class="tab-btn" data-view="result"><i class="fa-solid fa-language"></i> Output</button>
+            </div>
+
+            <!-- Code Subview -->
+            <div class="subview" id="trans-code-view">
+              <div class="lang-selector">
+                <button class="lang-tab active" data-lang="js">JavaScript</button>
+                <button class="lang-tab" data-lang="python">Python</button>
+                <button class="lang-tab" data-lang="curl">cURL</button>
+                <button class="btn-copy" id="btnCopyTransCode"><i class="fa-regular fa-copy"></i> Copy Code</button>
+              </div>
+              <pre class="code-block"><code id="trans-code-snippet">// Translation Code...</code></pre>
+            </div>
+
+            <!-- Result Subview -->
+            <div class="subview hidden" id="trans-result-view">
+              <div class="result-box">
+                <div class="transcript-card">
+                  <div class="card-title-bar">
+                    <span><i class="fa-solid fa-language"></i> Translated Output</span>
+                    <span class="latency-badge" id="trans-latency-tag">-- ms</span>
+                  </div>
+                  <div class="transcript-text" id="trans-output-text">Translation output will appear here...</div>
+                </div>
+
+                <div class="payload-preview">
+                  <div class="preview-title">Response Metadata</div>
+                  <pre id="trans-json-response">{}</pre>
+                </div>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </section>
+
+      <!-- ── TAB 6: API KEYS ── -->
+      <section class="tab-pane hidden" id="tab-api-keys">
+        <div class="section-header">
+          <div>
+            <h3>API Keys</h3>
+            <p>Your API keys grant access to Carnot Research STT, TTS, and Translation endpoints.</p>
+          </div>
+          <button class="btn btn-primary" id="btnCreateKey"><i class="fa-solid fa-plus"></i> Create New API Key</button>
+        </div>
+
+        <div class="keys-table-container">
+          <table class="keys-table">
+            <thead>
+              <tr>
+                <th>Key Name</th>
+                <th>API Key Token</th>
+                <th>Created</th>
+                <th>Status</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="apiKeysTableBody">
+              <!-- Dynamically populated -->
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- ── TAB 7: TELEMETRY & SYSTEM STATUS ── -->
+      <section class="tab-pane hidden" id="tab-api-status">
+        <div class="section-header">
+          <div>
+            <h3>GPU Hardware Telemetry & Microservices Status</h3>
+            <p>Live health metrics for NVIDIA L4 GPU and active background processes.</p>
+          </div>
+        </div>
+
+        <div class="stats-grid">
+          <div class="stat-card">
+            <div class="stat-icon"><i class="fa-solid fa-microchip"></i></div>
+            <div class="stat-val">NVIDIA L4</div>
+            <div class="stat-label">GPU Acceleration Model</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon"><i class="fa-solid fa-memory"></i></div>
+            <div class="stat-val">7.1 / 23 GB</div>
+            <div class="stat-label">VRAM Allocation (30% Capacity)</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon"><i class="fa-solid fa-server"></i></div>
+            <div class="stat-val">CUDA 12.4</div>
+            <div class="stat-label">Driver Version 550.163.01</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon"><i class="fa-solid fa-circle-check"></i></div>
+            <div class="stat-val">3 / 3 Active</div>
+            <div class="stat-label">Live GPU Microservices</div>
+          </div>
+        </div>
+
+        <h3 class="section-heading">Microservices Gateway Matrix</h3>
+        <div class="keys-table-container">
+          <table class="keys-table">
+            <thead>
+              <tr>
+                <th>Service Name</th>
+                <th>Protocol / Port</th>
+                <th>Active GPU Model Engine</th>
+                <th>Memory Allocation</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><strong>Carnot Speech-to-Text</strong></td>
+                <td><span class="key-code">ws://127.0.0.1:8091</span></td>
+                <td><code>CR_stt1</code></td>
+                <td>264 MiB VRAM</td>
+                <td><span class="status-indicator"></span> Active (CUDA 12.4)</td>
+              </tr>
+              <tr>
+                <td><strong>Carnot Text-to-Speech</strong></td>
+                <td><span class="key-code">ws://127.0.0.1:8092</span></td>
+                <td><code>CR_voice1</code></td>
+                <td>2,438 MiB VRAM</td>
+                <td><span class="status-indicator"></span> Active (CUDA 12.4)</td>
+              </tr>
+              <tr>
+                <td><strong>Carnot Translation Service</strong></td>
+                <td><span class="key-code">http://127.0.0.1:8000</span></td>
+                <td><code>CR_trans</code></td>
+                <td>4,394 MiB VRAM</td>
+                <td><span class="status-indicator"></span> Active (CUDA 12.4)</td>
+              </tr>
+              <tr>
+                <td><strong>Carnot API Gateway Portal</strong></td>
+                <td><span class="key-code">http://127.0.0.1:3000</span></td>
+                <td>Express API Gateway</td>
+                <td>120 MiB RAM</td>
+                <td><span class="status-indicator"></span> Active</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- ── TAB 8: DOCUMENTATION / API REFERENCE ── -->
+      <section class="tab-pane hidden" id="tab-documentation">
+        <div class="section-header">
+          <div>
+            <h3>Carnot Research API Reference & Developer Integration Guide</h3>
+            <p>Comprehensive HTTP & WebSocket protocol specifications for STT, TTS, and Translation endpoints.</p>
+          </div>
+          <a href="/Carnot_Research_API.postman_collection.json" download="Carnot_Research_API.postman_collection.json" class="btn btn-primary">
+            <i class="fa-solid fa-download"></i> Download Postman Collection
+          </a>
+        </div>
+
+        <div class="doc-container">
+          <div class="doc-card">
+            <h4><i class="fa-solid fa-volume-high"></i> Text-to-Speech Endpoint (`POST /v1/tts/generate`)</h4>
+            <p>Synthesizes input text into high-fidelity 44.1kHz audio in base64 format using Carnot CR_voice model series.</p>
+            <pre class="code-block"><code>POST /v1/tts/generate
+Header: Authorization: Bearer vx_live_...
+Body:
+{
+  "text": "नमस्ते",
+  "model": "CR_voice1",
+  "target_language": "hi-IN",
+  "voice": "shubh",
+  "pace": 1.0,
+  "sample_rate": 44100
+}</code></pre>
+          </div>
+
+          <div class="doc-card" style="margin-top: 20px;">
+            <h4><i class="fa-solid fa-microphone-lines"></i> Speech-to-Text Endpoint (`POST /v1/stt/transcribe`)</h4>
+            <p>Transcribes uploaded WAV/MP3 audio file or raw base64 PCM stream into text using Carnot CR_stt model series.</p>
+            <pre class="code-block"><code>POST /v1/stt/transcribe
+Header: Authorization: Bearer vx_live_...
+FormData:
+  file: <binary_audio_file>
+  model: "CR_stt1"
+  language_code: "hi-IN"</code></pre>
+          </div>
+
+          <div class="doc-card" style="margin-top: 20px;">
+            <h4><i class="fa-solid fa-language"></i> Translation Endpoint (`POST /v1/translate`)</h4>
+            <p>Translates source text between 22 Indic languages and English using Carnot CR_trans engine on GPU.</p>
+            <pre class="code-block"><code>POST /v1/translate
+Header: Authorization: Bearer vx_live_...
+Body:
+{
+  "text": "Hello, welcome.",
+  "model": "CR_trans",
+  "source_language": "English",
+  "target_language": "Hindi"
+}</code></pre>
+          </div>
+        </div>
+      </section>
+
+    </main>
+  </div>
+
+  <!-- ── Create Key Modal ── -->
+  <div class="modal-overlay hidden" id="keyModal">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h4>Create New API Key</h4>
+        <button class="close-btn" id="closeKeyModal">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label>Key Name / Description</label>
+          <input type="text" id="newKeyNameInput" placeholder="e.g. Carnot Production Gateway">
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" id="cancelKeyModal">Cancel</button>
+        <button class="btn btn-primary" id="confirmCreateKey">Create Key</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,216 @@
+{
+  "info": {
+    "_postman_id": "c8f92100-341e-4509-a1b7-carnot2026api",
+    "name": "Carnot Research — Speech & Translation AI Platform",
+    "description": "Production-grade API collection for Carnot Research on-premise GPU accelerated CR_stt, CR_voice, and CR_trans AI model engines.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://34.19.94.82",
+      "type": "string"
+    },
+    {
+      "key": "apiKey",
+      "value": "vx_live_master_demo_key_778",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "Speech AI",
+      "item": [
+        {
+          "name": "Text-to-Speech (TTS) — Generate Audio (CR_voice1)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"text\": \"नमस्ते, कार्नोट रीसर्चे एआई प्लेटफॉर्म में आपका स्वागत है।\",\n  \"model\": \"CR_voice1\",\n  \"target_language\": \"hi-IN\",\n  \"voice\": \"default\",\n  \"pace\": 1.0,\n  \"sample_rate\": 44100\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/v1/tts/generate",
+              "host": ["{{baseUrl}}"],
+              "path": ["v1", "tts", "generate"]
+            },
+            "description": "Synthesizes input text into high-fidelity 44.1kHz audio in base64 format using Carnot CR_voice1 engine."
+          },
+          "response": []
+        },
+        {
+          "name": "Speech-to-Text (STT) — Transcribe Audio (CR_stt1)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{apiKey}}",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "model",
+                  "value": "CR_stt1",
+                  "type": "text"
+                },
+                {
+                  "key": "language_code",
+                  "value": "hi-IN",
+                  "type": "text"
+                },
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": []
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{baseUrl}}/v1/stt/transcribe",
+              "host": ["{{baseUrl}}"],
+              "path": ["v1", "stt", "transcribe"]
+            },
+            "description": "Transcribes uploaded WAV/MP3/WebM/OGG audio into text using Carnot CR_stt1 engine."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Neural Machine Translation",
+      "item": [
+        {
+          "name": "Translate (English → Indic - CR_trans)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"text\": \"Welcome to Carnot Research AI Platform.\",\n  \"model\": \"CR_trans\",\n  \"source_language\": \"English\",\n  \"target_language\": \"Hindi\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/v1/translate",
+              "host": ["{{baseUrl}}"],
+              "path": ["v1", "translate"]
+            },
+            "description": "Translates English text into any of 22 supported Indic languages using Carnot CR_trans engine."
+          },
+          "response": []
+        },
+        {
+          "name": "Translate (Indic → English - CR_trans)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"text\": \"வணக்கம், Carnot Research AI தளத்திற்கு உங்களை வரவேற்கிறோம்.\",\n  \"model\": \"CR_trans\",\n  \"source_language\": \"Tamil\",\n  \"target_language\": \"English\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/v1/translate",
+              "host": ["{{baseUrl}}"],
+              "path": ["v1", "translate"]
+            },
+            "description": "Translates source Indic text (e.g. Tamil, Hindi, Telugu) into fluent English using CR_trans."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "System & Key Management",
+      "item": [
+        {
+          "name": "Get GPU Hardware & Microservices Telemetry",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/status",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "status"]
+            },
+            "description": "Returns live status of NVIDIA L4 GPU VRAM, CUDA version, and active microservices."
+          },
+          "response": []
+        },
+        {
+          "name": "List Active API Keys",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/keys",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "keys"]
+            },
+            "description": "Retrieves list of active API keys and request usage counts."
+          },
+          "response": []
+        },
+        {
+          "name": "Create New API Key",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Carnot Production Service Key\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/keys/create",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "keys", "create"]
+            },
+            "description": "Generates a new Bearer API Key for service integrations."
+          },
+          "response": []
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,33 @@
+# Virtual environments
+venv/
+**/venv/
+.venv/
+env/
+
+# Node dependencies & logs
+node_modules/
+**/node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Python cache & artifacts
+__pycache__/
+**/__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+
+# System & IDE logs
+*.log
+/tmp/
+.DS_Store
+.vscode/
+.idea/
+
+# Large model checkpoints / cache
+*.bin
+*.pt
+*.pth
+*.safetensors
