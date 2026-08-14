@@ -82,6 +82,9 @@
         </a>
 
         <div class="menu-label">API Playground</div>
+        <a href="#voice-agent" class="menu-item" data-tab="voice-agent">
+          <i class="fa-solid fa-circle-nodes"></i> Voice Agent <span class="badge-new">AI</span>
+        </a>
         <a href="#tts" class="menu-item" data-tab="tts">
           <i class="fa-solid fa-volume-high"></i> Text to Speech
         </a>
@@ -881,6 +884,88 @@ Body:
   "target_language": "Hindi"
 }</code></pre>
           </div>
+        </div>
+      <!-- ── TAB 8: REALTIME VOICE AGENT (ChatGPT / ElevenLabs Voice Style) ── -->
+      <section class="tab-pane hidden" id="tab-voice-agent">
+        <div class="voice-agent-container">
+          
+          <!-- Top Bar Controls -->
+          <div class="voice-agent-header">
+            <div class="agent-model-tag">
+              <span class="pulse-dot"></span>
+              <span><strong>Carnot Realtime Voice AI</strong> • Qwen 3.5 + CR_voice1 + CR_stt1</span>
+            </div>
+
+            <div class="voice-agent-selectors">
+              <div class="voice-select-pill">
+                <i class="fa-solid fa-language"></i>
+                <select id="agentLangSelect">
+                  <option value="en-IN">English (India)</option>
+                  <option value="hi-IN" selected>Hindi (हिन्दी)</option>
+                  <option value="ta-IN">Tamil (தமிழ்)</option>
+                  <option value="te-IN">Telugu (తెలుగు)</option>
+                  <option value="ml-IN">Malayalam (മലയാളം)</option>
+                  <option value="bn-IN">Bengali (বাংলা)</option>
+                  <option value="mr-IN">Marathi (मराठी)</option>
+                  <option value="gu-IN">Gujarati (ગુજરાતી)</option>
+                  <option value="kn-IN">Kannada (ಕನ್ನಡ)</option>
+                </select>
+              </div>
+
+              <div class="voice-select-pill">
+                <i class="fa-solid fa-waveform"></i>
+                <select id="agentVoiceSelect">
+                  <option value="CR_voice1" selected>CR_voice1 (44.1kHz)</option>
+                  <option value="CR_voice2">CR_voice2 (22kHz)</option>
+                  <option value="CR_voice3">CR_voice3 (16kHz)</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <!-- Main Stage: 3D Interactive Animated Fluid Voice Orb -->
+          <div class="voice-orb-stage">
+            <div class="orb-canvas-wrapper" id="orbWrapper">
+              <canvas id="voiceOrbCanvas" width="360" height="360"></canvas>
+            </div>
+
+            <!-- Status Pill: Idle / Listening / Thinking / Speaking -->
+            <div class="orb-status-indicator" id="orbStatusIndicator">
+              <span class="status-dot"></span>
+              <span id="orbStatusText">Click mic below to start real-time voice chat</span>
+            </div>
+
+            <!-- Real-time Live Subtitles / Transcript -->
+            <div class="orb-transcript-card" id="orbTranscriptCard">
+              <div class="transcript-line user-line" id="userLiveTranscript">
+                <span class="transcript-role"><i class="fa-solid fa-user"></i></span>
+                <span class="transcript-text" id="userLiveText">"Speak to start conversational voice agent..."</span>
+              </div>
+              <div class="transcript-line ai-line" id="aiLiveTranscript">
+                <span class="transcript-role"><i class="fa-solid fa-bolt"></i></span>
+                <span class="transcript-text" id="aiLiveText">"Hello! I am Carnot Voice AI running locally on NVIDIA L4 GPU with Qwen 3.5. How can I assist you today?"</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Bottom Floating Input Bar (Matching ChatGPT Voice & ElevenLabs) -->
+          <div class="voice-bottom-bar">
+            <button class="voice-action-btn" id="btnAgentReset" title="Reset Voice Conversation">
+              <i class="fa-solid fa-rotate-right"></i>
+            </button>
+
+            <div class="voice-text-input-wrap">
+              <input type="text" id="agentTextInput" placeholder="Ask Carnot Voice AI or speak..." autocomplete="off">
+              <button class="voice-send-btn" id="btnAgentSendText" title="Send text query">
+                <i class="fa-solid fa-arrow-up"></i>
+              </button>
+            </div>
+
+            <button class="voice-mic-main-btn" id="btnAgentMicToggle" title="Toggle Real-Time Voice Conversation">
+              <i class="fa-solid fa-microphone" id="micIconMain"></i>
+            </button>
+          </div>
+
         </div>
       </section>
 

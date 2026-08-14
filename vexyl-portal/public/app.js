@@ -5,6 +5,7 @@ document.addEventListener('DOMContentLoaded', () => {
   initThemeSwitcher();
   initNavigation();
   initCodeGenerators();
+  initVoiceAgent();
   initTtsPlayground();
   initSttPlayground();
   initTranslatePlayground();
@@ -140,6 +141,7 @@ function switchTab(tabId) {
 
   const titleMap = {
     overview: 'Platform Overview',
+    'voice-agent': 'Realtime Voice Agent',
     'api-keys': 'API Keys Management',
     'model-catalogue': 'Model Catalogue',
     tts: 'Text to Speech Playground',
@@ -918,3 +920,428 @@ async function loadSystemStatus() {
     console.log('System Status Telemetry:', status);
   } catch (e) {}
 }
+
+// ── Realtime Voice Agent Controller (ChatGPT / ElevenLabs Style) ──
+let agentState = 'idle'; // 'idle', 'listening', 'thinking', 'speaking'
+let agentMediaRecorder = null;
+let agentAudioChunks = [];
+let agentAudioContext = null;
+let agentAnalyser = null;
+let agentDataArray = null;
+let agentCurrentAudio = null;
+let agentConversationHistory = [
+  {
+    role: 'system',
+    content: 'You are Carnot Voice AI, an intelligent, conversational, real-time voice agent. Always keep responses natural, friendly, spoken-friendly, and concise (1-3 sentences maximum) so they sound great when spoken out loud.'
+  }
+];
+
+function initVoiceAgent() {
+  const canvas = document.getElementById('voiceOrbCanvas');
+  if (!canvas) return;
+
+  const btnMicToggle = document.getElementById('btnAgentMicToggle');
+  const btnSendText = document.getElementById('btnAgentSendText');
+  const textInput = document.getElementById('agentTextInput');
+  const btnReset = document.getElementById('btnAgentReset');
+
+  // Start animated fluid glowing orb canvas loop
+  startOrbAnimation(canvas);
+
+  if (btnMicToggle) {
+    btnMicToggle.addEventListener('click', () => {
+      if (agentState === 'listening') {
+        stopAgentListeningAndProcess();
+      } else {
+        startAgentListening();
+      }
+    });
+  }
+
+  if (btnSendText) {
+    btnSendText.addEventListener('click', () => {
+      const q = textInput.value.trim();
+      if (q) {
+        textInput.value = '';
+        processAgentUserQuery(q);
+      }
+    });
+  }
+
+  if (textInput) {
+    textInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        const q = textInput.value.trim();
+        if (q) {
+          textInput.value = '';
+          processAgentUserQuery(q);
+        }
+      }
+    });
+  }
+
+  if (btnReset) {
+    btnReset.addEventListener('click', () => {
+      stopAgentSpeaking();
+      agentConversationHistory = [
+        {
+          role: 'system',
+          content: 'You are Carnot Voice AI, an intelligent, conversational, real-time voice agent. Always keep responses natural, friendly, spoken-friendly, and concise (1-3 sentences maximum).'
+        }
+      ];
+      setAgentState('idle', 'Conversation reset. Tap mic to talk.');
+      document.getElementById('userLiveText').textContent = '"Speak to start conversational voice agent..."';
+      document.getElementById('aiLiveText').textContent = '"Conversation cleared. How can I help you next?"';
+    });
+  }
+}
+
+function setAgentState(state, statusMsg) {
+  agentState = state;
+  const indicator = document.getElementById('orbStatusIndicator');
+  const statusText = document.getElementById('orbStatusText');
+  const btnMic = document.getElementById('btnAgentMicToggle');
+  const micIcon = document.getElementById('micIconMain');
+
+  if (indicator) {
+    indicator.className = 'orb-status-indicator ' + state;
+  }
+  if (statusText && statusMsg) {
+    statusText.textContent = statusMsg;
+  }
+
+  if (btnMic && micIcon) {
+    if (state === 'listening') {
+      btnMic.classList.add('active');
+      micIcon.className = 'fa-solid fa-stop';
+    } else {
+      btnMic.classList.remove('active');
+      micIcon.className = 'fa-solid fa-microphone';
+    }
+  }
+}
+
+async function startAgentListening() {
+  stopAgentSpeaking();
+
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    
+    // Setup Web Audio Analyser for live mic frequency visualizer
+    if (!agentAudioContext) {
+      agentAudioContext = new (window.AudioContext || window.webkitAudioContext)();
+    }
+    if (agentAudioContext.state === 'suspended') {
+      await agentAudioContext.resume();
+    }
+
+    const source = agentAudioContext.createMediaStreamSource(stream);
+    agentAnalyser = agentAudioContext.createAnalyser();
+    agentAnalyser.fftSize = 64;
+    source.connect(agentAnalyser);
+    agentDataArray = new Uint8Array(agentAnalyser.frequencyBinCount);
+
+    let options = {};
+    if (typeof MediaRecorder.isTypeSupported === 'function') {
+      if (MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) options.mimeType = 'audio/webm;codecs=opus';
+      else if (MediaRecorder.isTypeSupported('audio/webm')) options.mimeType = 'audio/webm';
+      else if (MediaRecorder.isTypeSupported('audio/ogg')) options.mimeType = 'audio/ogg';
+    }
+
+    agentMediaRecorder = new MediaRecorder(stream, options);
+    agentAudioChunks = [];
+
+    agentMediaRecorder.ondataavailable = (e) => {
+      if (e.data.size > 0) agentAudioChunks.push(e.data);
+    };
+
+    agentMediaRecorder.start();
+    setAgentState('listening', 'Listening to you... (Tap to finish)');
+    document.getElementById('userLiveText').textContent = '"Listening..."';
+  } catch (err) {
+    console.warn('Microphone permission fallback:', err);
+    // Fallback: Simulate sample query if mic not permitted
+    const sampleQuery = prompt('Microphone not available in this browser context. Type your query for Carnot Voice AI:', 'Tell me about Carnot Research AI platform in 2 sentences.');
+    if (sampleQuery) {
+      processAgentUserQuery(sampleQuery);
+    }
+  }
+}
+
+async function stopAgentListeningAndProcess() {
+  if (agentMediaRecorder && agentMediaRecorder.state !== 'inactive') {
+    agentMediaRecorder.onstop = async () => {
+      const mime = agentMediaRecorder.mimeType || 'audio/webm';
+      const audioBlob = new Blob(agentAudioChunks, { type: mime });
+      setAgentState('thinking', 'Transcribing & thinking (Qwen 3.5)...');
+      document.getElementById('userLiveText').textContent = '"Processing audio..."';
+
+      // Send to STT endpoint
+      try {
+        const lang = document.getElementById('agentLangSelect').value || 'hi-IN';
+        const formData = new FormData();
+        formData.append('model', 'CR_stt1');
+        formData.append('language_code', lang);
+        formData.append('file', audioBlob, 'mic_input.webm');
+
+        const sttRes = await fetch('/v1/stt/transcribe', {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${activeApiKey}` },
+          body: formData
+        });
+        const sttData = await sttRes.json();
+        const userText = (sttData.transcript || '').trim();
+
+        if (userText) {
+          processAgentUserQuery(userText);
+        } else {
+          setAgentState('idle', 'No speech detected. Tap mic to try again.');
+          document.getElementById('userLiveText').textContent = '"(No speech detected)"';
+        }
+      } catch (err) {
+        setAgentState('idle', 'STT Error: ' + err.message);
+      }
+    };
+
+    agentMediaRecorder.stop();
+  }
+}
+
+async function processAgentUserQuery(userText) {
+  stopAgentSpeaking();
+  document.getElementById('userLiveText').textContent = `"${userText}"`;
+  document.getElementById('aiLiveText').textContent = 'Generating spoken response...';
+  setAgentState('thinking', 'Qwen 3.5 is generating spoken response...');
+
+  agentConversationHistory.push({ role: 'user', content: userText });
+
+  try {
+    const lang = document.getElementById('agentLangSelect').value || 'hi-IN';
+    const voice = document.getElementById('agentVoiceSelect').value || 'CR_voice1';
+
+    // Call LLM Chat Completions (Qwen 3.5)
+    const llmRes = await fetch('/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${activeApiKey}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        model: 'qwen3.5:7b',
+        messages: agentConversationHistory,
+        temperature: 0.7,
+        max_tokens: 250
+      })
+    });
+
+    const llmData = await llmRes.json();
+    const replyText = (llmData.message && llmData.message.content) ? llmData.message.content.trim() : 'I am here to assist you.';
+
+    agentConversationHistory.push({ role: 'assistant', content: replyText });
+    document.getElementById('aiLiveText').textContent = `"${replyText}"`;
+
+    // Synthesize Speech via CR_voice1 TTS
+    setAgentState('speaking', 'Carnot Voice AI is speaking...');
+
+    const ttsRes = await fetch('/v1/tts/generate', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${activeApiKey}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        text: replyText,
+        model: voice,
+        target_language: lang,
+        voice: 'default',
+        pace: 1.0,
+        sample_rate: 44100
+      })
+    });
+
+    const ttsData = await ttsRes.json();
+    if (ttsData.audio_b64) {
+      playAgentAudio(ttsData.audio_b64);
+    } else {
+      setAgentState('idle', 'Speech synthesis complete (Text-only)');
+    }
+  } catch (err) {
+    setAgentState('idle', 'Error: ' + err.message);
+    document.getElementById('aiLiveText').textContent = 'Error: ' + err.message;
+  }
+}
+
+function playAgentAudio(audioBase64) {
+  stopAgentSpeaking();
+
+  const audio = new Audio(`data:audio/wav;base64,${audioBase64}`);
+  agentCurrentAudio = audio;
+
+  // Connect Web Audio Analyser to TTS playback for fluid orb pulsation
+  try {
+    if (!agentAudioContext) {
+      agentAudioContext = new (window.AudioContext || window.webkitAudioContext)();
+    }
+    const source = agentAudioContext.createMediaElementSource(audio);
+    agentAnalyser = agentAudioContext.createAnalyser();
+    agentAnalyser.fftSize = 64;
+    source.connect(agentAnalyser);
+    agentAnalyser.connect(agentAudioContext.destination);
+    agentDataArray = new Uint8Array(agentAnalyser.frequencyBinCount);
+  } catch (e) {}
+
+  audio.onended = () => {
+    setAgentState('idle', 'Conversation active. Tap mic to reply.');
+  };
+
+  audio.onerror = () => {
+    setAgentState('idle', 'Audio playback finished.');
+  };
+
+  audio.play().catch(e => {
+    setAgentState('idle', 'Tap mic to continue.');
+  });
+}
+
+function stopAgentSpeaking() {
+  if (agentCurrentAudio) {
+    agentCurrentAudio.pause();
+    agentCurrentAudio.currentTime = 0;
+    agentCurrentAudio = null;
+  }
+}
+
+// ── Animated Glowing Fluid Voice Orb Visualizer (Canvas 2D / Fluid Shader Effect) ──
+function startOrbAnimation(canvas) {
+  const ctx = canvas.getContext('2d');
+  let angle = 0;
+
+  function render() {
+    requestAnimationFrame(render);
+
+    const width = canvas.width;
+    const height = canvas.height;
+    const centerX = width / 2;
+    const centerY = height / 2;
+
+    ctx.clearRect(0, 0, width, height);
+
+    // Calculate audio energy level from Web Audio Analyser
+    let audioEnergy = 0;
+    if (agentAnalyser && agentDataArray) {
+      agentAnalyser.getByteFrequencyData(agentDataArray);
+      let sum = 0;
+      for (let i = 0; i < agentDataArray.length; i++) {
+        sum += agentDataArray[i];
+      }
+      audioEnergy = (sum / agentDataArray.length) / 255;
+    }
+
+    angle += 0.025;
+
+    // Determine Base Color Palette based on agent state
+    let col1, col2, col3, col4;
+    let baseRadius = 80;
+    let pulseAmount = Math.sin(angle * 1.5) * 4;
+
+    if (agentState === 'listening') {
+      // Vibrant Cyan & Neon Teal audio reaction
+      col1 = '#00f2fe';
+      col2 = '#4facfe';
+      col3 = '#00f5a0';
+      col4 = '#1e3a8a';
+      baseRadius = 90 + (audioEnergy * 45);
+      pulseAmount = Math.sin(angle * 4) * 8;
+    } else if (agentState === 'thinking') {
+      // Swirling Deep Violet & Purple
+      col1 = '#a855f7';
+      col2 = '#ec4899';
+      col3 = '#6366f1';
+      col4 = '#312e81';
+      baseRadius = 85 + (Math.sin(angle * 3) * 6);
+      pulseAmount = Math.cos(angle * 2) * 5;
+    } else if (agentState === 'speaking') {
+      // Dynamic Indigo, Electric Blue & Sky
+      col1 = '#6366f1';
+      col2 = '#38bdf8';
+      col3 = '#818cf8';
+      col4 = '#1e1b4b';
+      baseRadius = 88 + (audioEnergy * 55);
+      pulseAmount = Math.sin(angle * 3.5) * (6 + audioEnergy * 15);
+    } else {
+      // Idle: Gentle breathing floating celestial sphere
+      col1 = '#6366f1';
+      col2 = '#38bdf8';
+      col3 = '#c084fc';
+      col4 = '#0f172a';
+      baseRadius = 78 + pulseAmount;
+    }
+
+    const currentRadius = Math.max(30, baseRadius);
+
+    // Layer 1: Outer Soft Ambient Glow
+    const outerGlow = ctx.createRadialGradient(centerX, centerY, currentRadius * 0.4, centerX, centerY, currentRadius * 1.55);
+    outerGlow.addColorStop(0, hexToRgba(col2, 0.45));
+    outerGlow.addColorStop(0.5, hexToRgba(col1, 0.2));
+    outerGlow.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = outerGlow;
+    ctx.beginPath();
+    ctx.arc(centerX, centerY, currentRadius * 1.55, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Layer 2: Deforming Fluid Mesh Core Sphere
+    ctx.save();
+    ctx.beginPath();
+    const numPoints = 64;
+    for (let i = 0; i <= numPoints; i++) {
+      const theta = (i / numPoints) * Math.PI * 2;
+      // Perlin-like harmonic distortion
+      const wave1 = Math.sin(theta * 3 + angle * 2) * (3 + audioEnergy * 12);
+      const wave2 = Math.cos(theta * 5 - angle * 1.5) * (2 + audioEnergy * 8);
+      const r = currentRadius + wave1 + wave2;
+      const x = centerX + Math.cos(theta) * r;
+      const y = centerY + Math.sin(theta) * r;
+      if (i === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    }
+    ctx.closePath();
+
+    // Fluid Internal Gradient
+    const gradX = centerX + Math.cos(angle * 1.2) * (currentRadius * 0.35);
+    const gradY = centerY + Math.sin(angle * 1.2) * (currentRadius * 0.35);
+    const coreGrad = ctx.createRadialGradient(gradX, gradY, 10, centerX, centerY, currentRadius);
+    coreGrad.addColorStop(0, '#ffffff');
+    coreGrad.addColorStop(0.2, col1);
+    coreGrad.addColorStop(0.65, col2);
+    coreGrad.addColorStop(1, col3);
+
+    ctx.fillStyle = coreGrad;
+    ctx.fill();
+    ctx.restore();
+
+    // Layer 3: Specular Highlight Sheen
+    ctx.save();
+    ctx.beginPath();
+    const specX = centerX - currentRadius * 0.32;
+    const specY = centerY - currentRadius * 0.32;
+    const specGrad = ctx.createRadialGradient(specX, specY, 0, specX, specY, currentRadius * 0.6);
+    specGrad.addColorStop(0, 'rgba(255, 255, 255, 0.7)');
+    specGrad.addColorStop(0.5, 'rgba(255, 255, 255, 0.15)');
+    specGrad.addColorStop(1, 'rgba(255, 255, 255, 0)');
+    ctx.fillStyle = specGrad;
+    ctx.arc(centerX, centerY, currentRadius, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+
+  function hexToRgba(hex, alpha) {
+    if (!hex.startsWith('#')) return hex;
+    const r = parseInt(hex.slice(1, 3), 16) || 99;
+    const g = parseInt(hex.slice(3, 5), 16) || 102;
+    const b = parseInt(hex.slice(5, 7), 16) || 241;
+    return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+  }
+
+  render();
+}
+

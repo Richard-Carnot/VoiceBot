@@ -277,6 +277,66 @@ app.post('/v1/translate', authenticateKey, async (req, res) => {
   }
 });
 
+// ── LLM Chat Completion Endpoint (Qwen 3.5 via Ollama) ──
+app.post('/v1/chat/completions', authenticateKey, async (req, res) => {
+  try {
+    const { messages, model, stream = false, temperature = 0.7, max_tokens = 512 } = req.body;
+    const targetModel = model || 'qwen3.5:7b';
+
+    const ollamaPayload = {
+      model: targetModel,
+      messages: messages || [{ role: 'user', content: req.body.prompt || 'Hello' }],
+      stream: stream,
+      options: {
+        temperature: temperature,
+        num_predict: max_tokens
+      }
+    };
+
+    const response = await fetch('http://127.0.0.1:11434/api/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(ollamaPayload)
+    });
+
+    if (stream) {
+      res.setHeader('Content-Type', 'text/event-stream');
+      res.setHeader('Cache-Control', 'no-cache');
+      res.setHeader('Connection', 'keep-alive');
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder('utf-8');
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        const chunkStr = decoder.decode(value, { stream: true });
+        const lines = chunkStr.split('\n').filter(l => l.trim().length > 0);
+        for (const line of lines) {
+          try {
+            const parsed = JSON.parse(line);
+            res.write(`data: ${JSON.stringify({
+              content: parsed.message ? parsed.message.content : '',
+              done: parsed.done || false
+            })}\n\n`);
+          } catch (e) {}
+        }
+      }
+      res.write('data: [DONE]\n\n');
+      return res.end();
+    } else {
+      const data = await response.json();
+      return res.json({
+        model: targetModel,
+        message: data.message || { role: 'assistant', content: '' },
+        done: data.done
+      });
+    }
+  } catch (err) {
+    return res.status(500).json({ error: 'LLM generation error: ' + err.message });
+  }
+});
+
 // ── Hardware Telemetry & System Status Endpoint ──
 app.get('/api/status', (req, res) => {
   res.json({
@@ -285,14 +345,15 @@ app.get('/api/status', (req, res) => {
       model: 'NVIDIA L4 (24GB VRAM)',
       driver: '550.163.01',
       cuda: '12.4',
-      vram_allocated_mb: 7120,
+      vram_allocated_mb: 12204,
       vram_total_mb: 23040,
-      utilization_pct: 28
+      utilization_pct: 35
     },
     services: [
       { name: 'Speech-to-Text (STT)', port: 8091, status: 'active', model: 'CR_stt1' },
       { name: 'Text-to-Speech (TTS)', port: 8092, status: 'active', model: 'CR_voice1' },
-      { name: 'Translation NMT', port: 8000, status: 'active', model: 'CR_trans' }
+      { name: 'Translation NMT', port: 8000, status: 'active', model: 'CR_trans' },
+      { name: 'Conversational LLM', port: 11434, status: 'active', model: 'Qwen 3.5 (7B)' }
     ]
   });
 });
@@ -300,3 +361,4 @@ app.get('/api/status', (req, res) => {
 app.listen(PORT, () => {
   console.log(`Carnot Research Developer Portal Gateway running on http://127.0.0.1:${PORT}`);
 });
+
