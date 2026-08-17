@@ -1304,10 +1304,37 @@ function stopAgentSpeaking() {
   }
 }
 
-// ── Animated Glowing Fluid Voice Orb Visualizer (Canvas 2D / Fluid Shader Effect) ──
+// ── Advanced 3D Glowing Fluid Voice Orb Engine (Siri / ElevenLabs / ChatGPT Voice Style) ──
 function startOrbAnimation(canvas) {
   const ctx = canvas.getContext('2d');
   let angle = 0;
+  let smoothedAudioEnergy = 0;
+  let bassEnergy = 0;
+  let midEnergy = 0;
+  let trebleEnergy = 0;
+  let wavePhase = 0;
+
+  // Generate 45 floating stardust particles
+  const particles = [];
+  for (let i = 0; i < 45; i++) {
+    particles.push({
+      x: (Math.random() - 0.5) * 360,
+      y: (Math.random() - 0.5) * 360,
+      z: Math.random() * 200 + 50,
+      size: Math.random() * 2.2 + 0.8,
+      speed: Math.random() * 0.02 + 0.005,
+      angle: Math.random() * Math.PI * 2,
+      orbitRadius: Math.random() * 140 + 70,
+      opacity: Math.random() * 0.7 + 0.3
+    });
+  }
+
+  // Harmonic blob nodes for multi-metaball organic fluid physics
+  const blobs = [
+    { freqX: 2.1, freqY: 1.8, phase: 0, amp: 1.0, color: ['#38bdf8', '#6366f1', '#a855f7'] },
+    { freqX: 1.4, freqY: 2.3, phase: 1.8, amp: 0.85, color: ['#ec4899', '#8b5cf6', '#3b82f6'] },
+    { freqX: 2.8, freqY: 1.2, phase: 3.4, amp: 0.75, color: ['#00f2fe', '#4facfe', '#00f5a0'] }
+  ];
 
   function render() {
     requestAnimationFrame(render);
@@ -1319,116 +1346,260 @@ function startOrbAnimation(canvas) {
 
     ctx.clearRect(0, 0, width, height);
 
-    // Calculate audio energy level from Web Audio Analyser
-    let audioEnergy = 0;
+    // 1. Audio Frequency Spectrum Analysis (Sub-Bass, Speech Mids, High Treble)
+    let rawEnergy = 0;
+    let rawBass = 0;
+    let rawMids = 0;
+    let rawTreble = 0;
+
     if (agentAnalyser && agentDataArray) {
       agentAnalyser.getByteFrequencyData(agentDataArray);
+      const len = agentDataArray.length;
+      
       let sum = 0;
-      for (let i = 0; i < agentDataArray.length; i++) {
-        sum += agentDataArray[i];
+      let bSum = 0, mSum = 0, tSum = 0;
+      const bCut = Math.floor(len * 0.2);
+      const mCut = Math.floor(len * 0.6);
+
+      for (let i = 0; i < len; i++) {
+        const val = agentDataArray[i];
+        sum += val;
+        if (i < bCut) bSum += val;
+        else if (i < mCut) mSum += val;
+        else tSum += val;
       }
-      audioEnergy = (sum / agentDataArray.length) / 255;
+
+      rawEnergy = (sum / len) / 255;
+      rawBass = (bSum / Math.max(1, bCut)) / 255;
+      rawMids = (mSum / Math.max(1, mCut - bCut)) / 255;
+      rawTreble = (tSum / Math.max(1, len - mCut)) / 255;
     }
 
-    angle += 0.025;
+    // Smooth audio transitions (low-pass lerp filter)
+    smoothedAudioEnergy += (rawEnergy - smoothedAudioEnergy) * 0.22;
+    bassEnergy += (rawBass - bassEnergy) * 0.25;
+    midEnergy += (rawMids - midEnergy) * 0.22;
+    trebleEnergy += (rawTreble - trebleEnergy) * 0.20;
 
-    // Determine Base Color Palette based on agent state
-    let col1, col2, col3, col4;
-    let baseRadius = 80;
-    let pulseAmount = Math.sin(angle * 1.5) * 4;
+    // Simulation Clock
+    let speedMult = 1.0;
+    if (agentState === 'thinking') speedMult = 3.5;
+    else if (agentState === 'speaking') speedMult = 1.6 + smoothedAudioEnergy * 2.0;
+    else if (agentState === 'listening') speedMult = 1.8 + smoothedAudioEnergy * 3.0;
+
+    angle += 0.02 * speedMult;
+    wavePhase += 0.04 * speedMult;
+
+    // 2. State-Dependent Harmonic Parameters & Fluid Palettes
+    let baseRadius = 90;
+    let primaryColors, secondaryColors, auraColor, coreLightColor;
+    let rippleDeformation = 6;
+    let harmonicsCount = 4;
 
     if (agentState === 'listening') {
-      // Vibrant Cyan & Neon Teal audio reaction
-      col1 = '#00f2fe';
-      col2 = '#4facfe';
-      col3 = '#00f5a0';
-      col4 = '#1e3a8a';
-      baseRadius = 90 + (audioEnergy * 45);
-      pulseAmount = Math.sin(angle * 4) * 8;
+      // 🟢 Listening State: High-voltage Electric Cyan, Neon Teal, Emerald Pulse
+      baseRadius = 96 + (bassEnergy * 55) + (midEnergy * 35);
+      primaryColors = ['#00f2fe', '#4facfe', '#00f5a0', '#0284c7'];
+      secondaryColors = ['#00f5a0', '#38bdf8', '#6366f1'];
+      auraColor = 'rgba(0, 242, 254, 0.4)';
+      coreLightColor = '#ffffff';
+      rippleDeformation = 12 + (smoothedAudioEnergy * 30);
+      harmonicsCount = 6;
     } else if (agentState === 'thinking') {
-      // Swirling Deep Violet & Purple
-      col1 = '#a855f7';
-      col2 = '#ec4899';
-      col3 = '#6366f1';
-      col4 = '#312e81';
-      baseRadius = 85 + (Math.sin(angle * 3) * 6);
-      pulseAmount = Math.cos(angle * 2) * 5;
+      // 🟣 Thinking State: Fast vortex morphing, Electric Violet & Magenta
+      baseRadius = 86 + Math.sin(angle * 4) * 8;
+      primaryColors = ['#c084fc', '#ec4899', '#7c3aed', '#3b82f6'];
+      secondaryColors = ['#f43f5e', '#a855f7', '#06b6d4'];
+      auraColor = 'rgba(168, 85, 247, 0.45)';
+      coreLightColor = '#fdf4ff';
+      rippleDeformation = 8 + Math.cos(angle * 3) * 6;
+      harmonicsCount = 8;
     } else if (agentState === 'speaking') {
-      // Dynamic Indigo, Electric Blue & Sky
-      col1 = '#6366f1';
-      col2 = '#38bdf8';
-      col3 = '#818cf8';
-      col4 = '#1e1b4b';
-      baseRadius = 88 + (audioEnergy * 55);
-      pulseAmount = Math.sin(angle * 3.5) * (6 + audioEnergy * 15);
+      // 🔵 Speaking State: Rich Royal Indigo, Sky Blue, Radiant Iris Bloom
+      baseRadius = 92 + (bassEnergy * 65) + (smoothedAudioEnergy * 40);
+      primaryColors = ['#6366f1', '#38bdf8', '#a855f7', '#4338ca'];
+      secondaryColors = ['#38bdf8', '#818cf8', '#ec4899'];
+      auraColor = 'rgba(99, 102, 241, 0.5)';
+      coreLightColor = '#ffffff';
+      rippleDeformation = 10 + (smoothedAudioEnergy * 35);
+      harmonicsCount = 5;
     } else {
-      // Idle: Gentle breathing floating celestial sphere
-      col1 = '#6366f1';
-      col2 = '#38bdf8';
-      col3 = '#c084fc';
-      col4 = '#0f172a';
-      baseRadius = 78 + pulseAmount;
+      // ⚪ Idle State: Floating living celestial sphere
+      baseRadius = 84 + Math.sin(angle * 1.4) * 5;
+      primaryColors = ['#6366f1', '#38bdf8', '#a855f7', '#1e293b'];
+      secondaryColors = ['#38bdf8', '#818cf8', '#c084fc'];
+      auraColor = 'rgba(99, 102, 241, 0.25)';
+      coreLightColor = '#f8fafc';
+      rippleDeformation = 4 + Math.sin(angle * 2) * 3;
+      harmonicsCount = 3;
     }
 
-    const currentRadius = Math.max(30, baseRadius);
+    const currentRadius = Math.max(35, baseRadius);
 
-    // Layer 1: Outer Soft Ambient Glow
-    const outerGlow = ctx.createRadialGradient(centerX, centerY, currentRadius * 0.4, centerX, centerY, currentRadius * 1.55);
-    outerGlow.addColorStop(0, hexToRgba(col2, 0.45));
-    outerGlow.addColorStop(0.5, hexToRgba(col1, 0.2));
-    outerGlow.addColorStop(1, 'rgba(0,0,0,0)');
-    ctx.fillStyle = outerGlow;
+    // ── Layer 1: Ambient Multi-Stage Volumetric Aura ──
+    const auraRadius = currentRadius * 2.1;
+    const auraGrad = ctx.createRadialGradient(centerX, centerY, currentRadius * 0.3, centerX, centerY, auraRadius);
+    auraGrad.addColorStop(0, auraColor);
+    auraGrad.addColorStop(0.35, hexToRgba(primaryColors[0], 0.28));
+    auraGrad.addColorStop(0.7, hexToRgba(primaryColors[1], 0.12));
+    auraGrad.addColorStop(1, 'rgba(0, 0, 0, 0)');
+    ctx.fillStyle = auraGrad;
     ctx.beginPath();
-    ctx.arc(centerX, centerY, currentRadius * 1.55, 0, Math.PI * 2);
+    ctx.arc(centerX, centerY, auraRadius, 0, Math.PI * 2);
     ctx.fill();
 
-    // Layer 2: Deforming Fluid Mesh Core Sphere
+    // ── Layer 2: Reactive Acoustic Sound Rings (Sound Ripple Waveforms) ──
+    if (agentState === 'listening' || agentState === 'speaking' || smoothedAudioEnergy > 0.05) {
+      const ringCount = 3;
+      for (let r = 0; r < ringCount; r++) {
+        const ringProgress = (wavePhase * 0.6 + (r / ringCount)) % 1;
+        const ringR = currentRadius + ringProgress * 75 * (1 + smoothedAudioEnergy * 1.5);
+        const ringAlpha = (1 - ringProgress) * (0.35 + smoothedAudioEnergy * 0.45);
+
+        ctx.strokeStyle = hexToRgba(primaryColors[r % primaryColors.length], ringAlpha);
+        ctx.lineWidth = 1.5 + (1 - ringProgress) * 2;
+        ctx.beginPath();
+        ctx.arc(centerX, centerY, ringR, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+    }
+
+    // ── Layer 3: Floating Stardust Orbiting Particles ──
+    ctx.save();
+    for (let p of particles) {
+      p.angle += p.speed * speedMult;
+      const dist = p.orbitRadius + (bassEnergy * 30);
+      const px = centerX + Math.cos(p.angle) * dist;
+      const py = centerY + Math.sin(p.angle) * dist * 0.75 + Math.sin(angle + p.z) * 10;
+
+      const pAlpha = p.opacity * (0.4 + smoothedAudioEnergy * 0.6);
+      ctx.fillStyle = hexToRgba(coreLightColor, pAlpha);
+      ctx.shadowColor = primaryColors[0];
+      ctx.shadowBlur = 8;
+      ctx.beginPath();
+      ctx.arc(px, py, p.size * (1 + trebleEnergy * 1.2), 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+
+    // ── Layer 4: Organic Fluid Metaball Deformations (Bézier Harmonic Spline) ──
     ctx.save();
     ctx.beginPath();
-    const numPoints = 64;
-    for (let i = 0; i <= numPoints; i++) {
+    const numPoints = 128;
+    const points = [];
+
+    for (let i = 0; i < numPoints; i++) {
       const theta = (i / numPoints) * Math.PI * 2;
-      // Perlin-like harmonic distortion
-      const wave1 = Math.sin(theta * 3 + angle * 2) * (3 + audioEnergy * 12);
-      const wave2 = Math.cos(theta * 5 - angle * 1.5) * (2 + audioEnergy * 8);
-      const r = currentRadius + wave1 + wave2;
-      const x = centerX + Math.cos(theta) * r;
-      const y = centerY + Math.sin(theta) * r;
-      if (i === 0) ctx.moveTo(x, y);
-      else ctx.lineTo(x, y);
+      
+      // Harmonic wave superposition
+      const h1 = Math.sin(theta * 3 + angle * 2.2) * rippleDeformation;
+      const h2 = Math.cos(theta * 5 - angle * 1.7) * (rippleDeformation * 0.6);
+      const h3 = Math.sin(theta * 7 + angle * 3.1) * (rippleDeformation * 0.35);
+      const audioHarmonic = Math.sin(theta * harmonicsCount + wavePhase * 4) * (smoothedAudioEnergy * 28);
+      
+      const r = currentRadius + h1 + h2 + h3 + audioHarmonic;
+      const px = centerX + Math.cos(theta) * r;
+      const py = centerY + Math.sin(theta) * r;
+      points.push({ x: px, y: py });
+    }
+
+    // Smooth Bézier curve interpolation through points
+    ctx.moveTo((points[0].x + points[numPoints - 1].x) / 2, (points[0].y + points[numPoints - 1].y) / 2);
+    for (let i = 0; i < numPoints; i++) {
+      const pNext = points[(i + 1) % numPoints];
+      const midX = (points[i].x + pNext.x) / 2;
+      const midY = (points[i].y + pNext.y) / 2;
+      ctx.quadraticCurveTo(points[i].x, points[i].y, midX, midY);
     }
     ctx.closePath();
 
-    // Fluid Internal Gradient
-    const gradX = centerX + Math.cos(angle * 1.2) * (currentRadius * 0.35);
-    const gradY = centerY + Math.sin(angle * 1.2) * (currentRadius * 0.35);
-    const coreGrad = ctx.createRadialGradient(gradX, gradY, 10, centerX, centerY, currentRadius);
-    coreGrad.addColorStop(0, '#ffffff');
-    coreGrad.addColorStop(0.2, col1);
-    coreGrad.addColorStop(0.65, col2);
-    coreGrad.addColorStop(1, col3);
+    // Dynamic Multi-Focal Fluid Shading
+    const focalX = centerX + Math.cos(angle * 1.3) * (currentRadius * 0.38);
+    const focalY = centerY + Math.sin(angle * 1.1) * (currentRadius * 0.38);
+    const coreGrad = ctx.createRadialGradient(focalX, focalY, currentRadius * 0.05, centerX, centerY, currentRadius * 1.1);
+    coreGrad.addColorStop(0, coreLightColor);
+    coreGrad.addColorStop(0.22, primaryColors[0]);
+    coreGrad.addColorStop(0.55, primaryColors[1]);
+    coreGrad.addColorStop(0.85, primaryColors[2]);
+    coreGrad.addColorStop(1, primaryColors[3] || '#0f172a');
 
     ctx.fillStyle = coreGrad;
+    ctx.shadowColor = primaryColors[0];
+    ctx.shadowBlur = 35 + (smoothedAudioEnergy * 30);
     ctx.fill();
     ctx.restore();
 
-    // Layer 3: Specular Highlight Sheen
+    // ── Layer 5: Inner Swirling Plasma Caustics (Fluid Internal Depth) ──
     ctx.save();
+    ctx.globalCompositeOperation = 'screen';
+    for (let b = 0; b < blobs.length; b++) {
+      const blob = blobs[b];
+      const bx = centerX + Math.cos(angle * blob.freqX + blob.phase) * (currentRadius * 0.42);
+      const by = centerY + Math.sin(angle * blob.freqY + blob.phase) * (currentRadius * 0.42);
+      const br = currentRadius * 0.55 * blob.amp * (1 + smoothedAudioEnergy * 0.5);
+
+      const bGrad = ctx.createRadialGradient(bx, by, 0, bx, by, br);
+      bGrad.addColorStop(0, hexToRgba(blob.color[0], 0.75));
+      bGrad.addColorStop(0.5, hexToRgba(blob.color[1], 0.35));
+      bGrad.addColorStop(1, 'rgba(0,0,0,0)');
+
+      ctx.fillStyle = bGrad;
+      ctx.beginPath();
+      ctx.arc(bx, by, br, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+
+    // ── Layer 6: Specular 3D Glass Light Refraction & Sheen ──
+    ctx.save();
+    ctx.globalCompositeOperation = 'source-over';
+    
+    // Primary Top-Left Light Glint
+    const glint1X = centerX - currentRadius * 0.35 + Math.cos(angle * 0.8) * 6;
+    const glint1Y = centerY - currentRadius * 0.35 + Math.sin(angle * 0.8) * 6;
+    const glint1Grad = ctx.createRadialGradient(glint1X, glint1Y, 0, glint1X, glint1Y, currentRadius * 0.5);
+    glint1Grad.addColorStop(0, 'rgba(255, 255, 255, 0.95)');
+    glint1Grad.addColorStop(0.35, 'rgba(255, 255, 255, 0.4)');
+    glint1Grad.addColorStop(1, 'rgba(255, 255, 255, 0)');
+    ctx.fillStyle = glint1Grad;
     ctx.beginPath();
-    const specX = centerX - currentRadius * 0.32;
-    const specY = centerY - currentRadius * 0.32;
-    const specGrad = ctx.createRadialGradient(specX, specY, 0, specX, specY, currentRadius * 0.6);
-    specGrad.addColorStop(0, 'rgba(255, 255, 255, 0.7)');
-    specGrad.addColorStop(0.5, 'rgba(255, 255, 255, 0.15)');
-    specGrad.addColorStop(1, 'rgba(255, 255, 255, 0)');
-    ctx.fillStyle = specGrad;
+    ctx.arc(centerX, centerY, currentRadius, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Secondary Bottom-Right Rim Light
+    const glint2X = centerX + currentRadius * 0.38;
+    const glint2Y = centerY + currentRadius * 0.38;
+    const glint2Grad = ctx.createRadialGradient(glint2X, glint2Y, 0, glint2X, glint2Y, currentRadius * 0.45);
+    glint2Grad.addColorStop(0, hexToRgba(primaryColors[0], 0.6));
+    glint2Grad.addColorStop(0.5, hexToRgba(primaryColors[1], 0.2));
+    glint2Grad.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = glint2Grad;
+    ctx.beginPath();
     ctx.arc(centerX, centerY, currentRadius, 0, Math.PI * 2);
     ctx.fill();
     ctx.restore();
+
+    // ── Layer 7: Quantum Vortex Rings (During Thinking State) ──
+    if (agentState === 'thinking') {
+      ctx.save();
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.7)';
+      ctx.lineWidth = 2;
+      ctx.shadowColor = '#c084fc';
+      ctx.shadowBlur = 15;
+
+      const numRings = 2;
+      for (let k = 0; k < numRings; k++) {
+        ctx.beginPath();
+        const rot = angle * (k === 0 ? 3.5 : -3.0);
+        ctx.ellipse(centerX, centerY, currentRadius * 1.25, currentRadius * 0.45, rot, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
   }
 
   function hexToRgba(hex, alpha) {
-    if (!hex.startsWith('#')) return hex;
+    if (!hex || !hex.startsWith('#')) return `rgba(99, 102, 241, ${alpha})`;
     const r = parseInt(hex.slice(1, 3), 16) || 99;
     const g = parseInt(hex.slice(3, 5), 16) || 102;
     const b = parseInt(hex.slice(5, 7), 16) || 241;
