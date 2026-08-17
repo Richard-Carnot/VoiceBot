@@ -124,6 +124,11 @@ app.post('/api/keys/revoke', (req, res) => {
 app.post('/v1/tts/generate', authenticateKey, (req, res) => {
   const { text, target_language, voice, pace, sample_rate } = req.body;
 
+  console.log(`\n🔊 [TTS REQUEST] [${new Date().toISOString()}]`);
+  console.log(`   ├─ Model: ${voice || 'default'}`);
+  console.log(`   ├─ Language: ${target_language || 'hi-IN'}`);
+  console.log(`   └─ Text: "${text}"`);
+
   if (!text) {
     return res.status(400).json({ error: 'Missing required field: text' });
   }
@@ -148,6 +153,8 @@ app.post('/v1/tts/generate', authenticateKey, (req, res) => {
       if (msg.type === 'final' || msg.audio_b64 || msg.audio) {
         const latencyMs = Date.now() - startTime;
         ws.close();
+        const audioLen = (msg.audio_b64 || msg.audio || '').length;
+        console.log(`🔊 [TTS RESPONSE] Synthesized in ${latencyMs}ms | Audio payload: ${audioLen} base64 chars`);
         return res.json({
           status: 'success',
           request_id: msg.request_id || ('req_' + Date.now()),
@@ -159,6 +166,7 @@ app.post('/v1/tts/generate', authenticateKey, (req, res) => {
         });
       } else if (msg.type === 'error') {
         ws.close();
+        console.error(`❌ [TTS ERROR] ${msg.message}`);
         return res.status(500).json({ error: msg.message || 'TTS Synthesis failed' });
       }
     } catch (e) {
@@ -167,6 +175,7 @@ app.post('/v1/tts/generate', authenticateKey, (req, res) => {
   });
 
   ws.on('error', (err) => {
+    console.error(`❌ [TTS WS ERROR] ${err.message}`);
     res.status(500).json({ error: 'Failed to connect to local TTS engine: ' + err.message });
   });
 });
@@ -181,6 +190,11 @@ app.post('/v1/stt/transcribe', authenticateKey, upload.single('file'), async (re
   } else if (req.body.audio_b64) {
     rawAudioBuffer = Buffer.from(req.body.audio_b64, 'base64');
   }
+
+  console.log(`\n🎙️ [STT REQUEST] [${new Date().toISOString()}]`);
+  console.log(`   ├─ Model: ${req.body.model || 'CR_stt1'}`);
+  console.log(`   ├─ Language Code: ${language_code}`);
+  console.log(`   └─ Audio Payload Size: ${rawAudioBuffer ? rawAudioBuffer.length : 0} bytes`);
 
   if (!rawAudioBuffer) {
     return res.status(400).json({ error: 'Audio file or audio_b64 is required' });
@@ -212,6 +226,7 @@ app.post('/v1/stt/transcribe', authenticateKey, upload.single('file'), async (re
       if (msg.type === 'final') {
         const latencyMs = Date.now() - startTime;
         ws.close();
+        console.log(`🎙️ [STT RESPONSE] Transcribed in ${latencyMs}ms -> "${msg.text}" (conf: ${msg.confidence || 1.0})`);
         return res.json({
           status: 'success',
           transcript: msg.text || '',
@@ -221,6 +236,7 @@ app.post('/v1/stt/transcribe', authenticateKey, upload.single('file'), async (re
         });
       } else if (msg.type === 'error') {
         ws.close();
+        console.error(`❌ [STT ERROR] ${msg.message}`);
         return res.status(500).json({ error: msg.message || 'STT Transcription failed' });
       }
     } catch (e) {
@@ -229,6 +245,7 @@ app.post('/v1/stt/transcribe', authenticateKey, upload.single('file'), async (re
   });
 
   ws.on('error', (err) => {
+    console.error(`❌ [STT WS ERROR] ${err.message}`);
     res.status(500).json({ error: 'Failed to connect to local STT engine: ' + err.message });
   });
 });
@@ -243,6 +260,10 @@ app.post('/v1/translate', authenticateKey, async (req, res) => {
   const srcLang = source_language || 'English';
   const tgtLang = target_language || 'Hindi';
   const startTime = Date.now();
+
+  console.log(`\n🌐 [TRANSLATE REQUEST] [${new Date().toISOString()}]`);
+  console.log(`   ├─ Source: ${srcLang} ──► Target: ${tgtLang}`);
+  console.log(`   └─ Text: "${text}"`);
 
   try {
     let targetUrl = 'http://127.0.0.1:8000/translate';
@@ -264,22 +285,27 @@ app.post('/v1/translate', authenticateKey, async (req, res) => {
 
     const data = await response.json();
     const latencyMs = Date.now() - startTime;
+    const translatedText = data.translated || data.translated_text || text;
+
+    console.log(`🌐 [TRANSLATE RESPONSE] in ${latencyMs}ms ──► "${translatedText}"`);
 
     return res.json({
       status: 'success',
       source_language: srcLang,
       target_language: tgtLang,
-      translated_text: data.translated || data.translated_text || text,
+      translated_text: translatedText,
       flores_code: data.flores_code || '',
       latency_ms: latencyMs
     });
   } catch (err) {
+    console.error(`❌ [TRANSLATE ERROR] ${err.message}`);
     return res.status(500).json({ error: 'Translation backend error: ' + err.message });
   }
 });
 
 // ── LLM Chat Completion Endpoint (Qwen 3.6 27B via Groq LPU) ──
 app.post('/v1/chat/completions', authenticateKey, async (req, res) => {
+  const startTime = Date.now();
   try {
     const { messages, temperature = 0.6, max_tokens = 512 } = req.body;
 
@@ -293,6 +319,14 @@ app.post('/v1/chat/completions', authenticateKey, async (req, res) => {
       role: m.role,
       content: typeof m.content === 'string' ? m.content : (Array.isArray(m.content) ? (m.content[0]?.text || JSON.stringify(m.content)) : JSON.stringify(m.content))
     }));
+
+    console.log(`\n🧠 [LLM REQUEST] [${new Date().toISOString()}]`);
+    console.log(`   ├─ Model: ${targetModel} (Provider: Groq LPU)`);
+    console.log(`   ├─ Temperature: ${temperature}, Max Tokens: ${max_tokens}`);
+    console.log(`   └─ Message History (${formattedMessages.length} turns):`);
+    formattedMessages.forEach((m, idx) => {
+      console.log(`      [${idx}] ${m.role.toUpperCase()}: "${(m.content || '').substring(0, 80)}"`);
+    });
 
     const groqPayload = {
       model: targetModel,
@@ -314,6 +348,7 @@ app.post('/v1/chat/completions', authenticateKey, async (req, res) => {
 
     if (!response.ok) {
       const errText = await response.text();
+      console.error(`❌ [GROQ API ERROR ${response.status}] ${errText}`);
       throw new Error(`Groq API error ${response.status}: ${errText}`);
     }
 
@@ -327,6 +362,10 @@ app.post('/v1/chat/completions', authenticateKey, async (req, res) => {
 
     // Strip out <think>...</think> reasoning tags so only clean spoken response is sent
     replyContent = replyContent.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+    const latencyMs = Date.now() - startTime;
+
+    console.log(`🧠 [LLM RESPONSE] in ${latencyMs}ms | Tokens: ${data.usage ? JSON.stringify(data.usage) : 'N/A'}`);
+    console.log(`   └─ Reply: "${replyContent}"`);
 
     return res.json({
       model: targetModel,
@@ -335,7 +374,7 @@ app.post('/v1/chat/completions', authenticateKey, async (req, res) => {
       usage: data.usage || null
     });
   } catch (err) {
-    console.error('LLM generation error:', err);
+    console.error('❌ [LLM GENERATION ERROR]:', err);
     return res.status(500).json({ error: 'LLM generation error: ' + err.message });
   }
 });

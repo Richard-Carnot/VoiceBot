@@ -945,8 +945,26 @@ Body:
               </div>
               <div class="transcript-line ai-line" id="aiLiveTranscript">
                 <span class="transcript-role"><i class="fa-solid fa-bolt"></i></span>
-                <span class="transcript-text" id="aiLiveText">"Hello! I am Carnot Voice AI running locally on NVIDIA L4 GPU with Qwen 3.5. How can I assist you today?"</span>
+                <span class="transcript-text" id="aiLiveText">"Hello! I am Carnot Voice AI powered by Qwen 3.6 (27B) + CR_voice1 + CR_stt1. How can I assist you today?"</span>
               </div>
+            </div>
+          </div>
+
+          <!-- Real-Time Activity & Network Trace Inspector -->
+          <div class="voice-debug-panel" id="voiceDebugPanel">
+            <div class="debug-panel-header" id="toggleDebugLogs">
+              <div class="debug-header-title">
+                <i class="fa-solid fa-terminal"></i>
+                <span>Live Activity & Network Trace Logs</span>
+                <span class="badge badge-pulse" id="debugLogsBadge">Ready</span>
+              </div>
+              <div class="debug-header-actions">
+                <button class="debug-clear-btn" id="btnClearDebugLogs" title="Clear Logs"><i class="fa-solid fa-trash-can"></i> Clear</button>
+                <i class="fa-solid fa-chevron-up toggle-icon" id="debugToggleIcon"></i>
+              </div>
+            </div>
+            <div class="debug-panel-body" id="debugLogsBody">
+              <div class="debug-log-empty" id="debugEmptyNotice">Ready. Tap microphone or type a query to stream live request/response inspection.</div>
             </div>
           </div>
 
@@ -994,6 +1012,6 @@ Body:
     </div>
   </div>
 
-  <script src="app.js?v=20260817b"></script>
+  <script src="app.js?v=20260817_debug"></script>
 </body>
 </html>
