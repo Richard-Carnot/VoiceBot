@@ -155,6 +155,12 @@ app.post('/v1/tts/generate', authenticateKey, (req, res) => {
         ws.close();
         const audioLen = (msg.audio_b64 || msg.audio || '').length;
         console.log(`🔊 [TTS RESPONSE] Synthesized in ${latencyMs}ms | Audio payload: ${audioLen} base64 chars`);
+        addServerLog('TTS', `Synthesized ${text.length} chars to ${target_language}`, {
+          model: voice || 'CR_voice1',
+          language: target_language,
+          latency_ms: latencyMs,
+          text: text
+        });
         return res.json({
           status: 'success',
           request_id: msg.request_id || ('req_' + Date.now()),
@@ -167,6 +173,7 @@ app.post('/v1/tts/generate', authenticateKey, (req, res) => {
       } else if (msg.type === 'error') {
         ws.close();
         console.error(`❌ [TTS ERROR] ${msg.message}`);
+        addServerLog('ERROR', `TTS Error: ${msg.message}`, { service: 'TTS' });
         return res.status(500).json({ error: msg.message || 'TTS Synthesis failed' });
       }
     } catch (e) {
@@ -176,6 +183,7 @@ app.post('/v1/tts/generate', authenticateKey, (req, res) => {
 
   ws.on('error', (err) => {
     console.error(`❌ [TTS WS ERROR] ${err.message}`);
+    addServerLog('ERROR', `TTS WebSocket Error: ${err.message}`, { service: 'TTS' });
     res.status(500).json({ error: 'Failed to connect to local TTS engine: ' + err.message });
   });
 });
@@ -227,6 +235,12 @@ app.post('/v1/stt/transcribe', authenticateKey, upload.single('file'), async (re
         const latencyMs = Date.now() - startTime;
         ws.close();
         console.log(`🎙️ [STT RESPONSE] Transcribed in ${latencyMs}ms -> "${msg.text}" (conf: ${msg.confidence || 1.0})`);
+        addServerLog('STT', `Transcribed audio (${audioBuffer.length} bytes) -> "${msg.text}"`, {
+          model: 'CR_stt1',
+          language: msg.lang || language_code,
+          confidence: msg.confidence,
+          latency_ms: latencyMs
+        });
         return res.json({
           status: 'success',
           transcript: msg.text || '',
@@ -237,6 +251,7 @@ app.post('/v1/stt/transcribe', authenticateKey, upload.single('file'), async (re
       } else if (msg.type === 'error') {
         ws.close();
         console.error(`❌ [STT ERROR] ${msg.message}`);
+        addServerLog('ERROR', `STT Error: ${msg.message}`, { service: 'STT' });
         return res.status(500).json({ error: msg.message || 'STT Transcription failed' });
       }
     } catch (e) {
@@ -246,6 +261,7 @@ app.post('/v1/stt/transcribe', authenticateKey, upload.single('file'), async (re
 
   ws.on('error', (err) => {
     console.error(`❌ [STT WS ERROR] ${err.message}`);
+    addServerLog('ERROR', `STT WebSocket Error: ${err.message}`, { service: 'STT' });
     res.status(500).json({ error: 'Failed to connect to local STT engine: ' + err.message });
   });
 });
@@ -288,6 +304,13 @@ app.post('/v1/translate', authenticateKey, async (req, res) => {
     const translatedText = data.translated || data.translated_text || text;
 
     console.log(`🌐 [TRANSLATE RESPONSE] in ${latencyMs}ms ──► "${translatedText}"`);
+    addServerLog('TRANSLATE', `Translated ${srcLang} ──► ${tgtLang}`, {
+      source: srcLang,
+      target: tgtLang,
+      original: text,
+      translated: translatedText,
+      latency_ms: latencyMs
+    });
 
     return res.json({
       status: 'success',
@@ -299,6 +322,7 @@ app.post('/v1/translate', authenticateKey, async (req, res) => {
     });
   } catch (err) {
     console.error(`❌ [TRANSLATE ERROR] ${err.message}`);
+    addServerLog('ERROR', `Translation Error: ${err.message}`, { service: 'TRANSLATE' });
     return res.status(500).json({ error: 'Translation backend error: ' + err.message });
   }
 });
@@ -311,7 +335,7 @@ app.post('/v1/chat/completions', authenticateKey, async (req, res) => {
 
     const groqUrl = process.env.GROQ_API_URL || 'https://api.groq.com/openai/v1/chat/completions';
     const apiKey = process.env.GROQ_API_KEY;
-    const targetModel = process.env.GROQ_MODEL || 'qwen/qwen3.6-27b';
+    const targetModel = process.env.GROQ_MODEL || 'llama-3.3-70b-versatile';
 
     // Format messages for Groq API
     const rawMessages = messages || [{ role: 'user', content: req.body.prompt || 'Hello' }];
@@ -349,6 +373,7 @@ app.post('/v1/chat/completions', authenticateKey, async (req, res) => {
     if (!response.ok) {
       const errText = await response.text();
       console.error(`❌ [GROQ API ERROR ${response.status}] ${errText}`);
+      addServerLog('ERROR', `Groq API Error ${response.status}`, { error: errText });
       throw new Error(`Groq API error ${response.status}: ${errText}`);
     }
 
@@ -372,6 +397,13 @@ app.post('/v1/chat/completions', authenticateKey, async (req, res) => {
     console.log(`🧠 [LLM RESPONSE] in ${latencyMs}ms | Tokens: ${data.usage ? JSON.stringify(data.usage) : 'N/A'}`);
     console.log(`   └─ Reply: "${replyContent}"`);
 
+    addServerLog('LLM', `Generated response with ${targetModel} in ${latencyMs}ms`, {
+      model: targetModel,
+      latency_ms: latencyMs,
+      reply_text: replyContent,
+      usage: data.usage
+    });
+
     return res.json({
       model: targetModel,
       message: { role: 'assistant', content: replyContent },
@@ -380,8 +412,27 @@ app.post('/v1/chat/completions', authenticateKey, async (req, res) => {
     });
   } catch (err) {
     console.error('❌ [LLM GENERATION ERROR]:', err);
+    addServerLog('ERROR', `LLM Generation Error: ${err.message}`, { service: 'LLM' });
     return res.status(500).json({ error: 'LLM generation error: ' + err.message });
   }
+});
+
+// ── In-Memory Log Store & Logs API ──
+const serverLogBuffer = [];
+function addServerLog(type, message, details) {
+  const entry = {
+    id: Date.now() + '_' + Math.random().toString(36).substring(2, 6),
+    timestamp: new Date().toISOString(),
+    type,
+    message,
+    details
+  };
+  serverLogBuffer.unshift(entry);
+  if (serverLogBuffer.length > 200) serverLogBuffer.pop();
+}
+
+app.get('/api/logs', (req, res) => {
+  res.json(serverLogBuffer);
 });
 
 // ── Hardware Telemetry & System Status Endpoint ──
@@ -400,7 +451,7 @@ app.get('/api/status', (req, res) => {
       { name: 'Speech-to-Text (STT)', port: 8091, status: 'active', model: 'CR_stt1' },
       { name: 'Text-to-Speech (TTS)', port: 8092, status: 'active', model: 'CR_voice1' },
       { name: 'Translation NMT', port: 8000, status: 'active', model: 'CR_trans' },
-      { name: 'Conversational LLM', port: 443, status: 'active', model: 'Qwen 3.6 (27B) [Groq LPU]' }
+      { name: 'Conversational LLM', port: 443, status: 'active', model: 'Llama 3.3 (70B) [Groq LPU]' }
     ]
   });
 });
