@@ -702,13 +702,48 @@ def _init_bhashini() -> None:
         log.error(f"[Bhashini] Startup validation failed: {exc}")
 
 
+INDIC_VOICE_MAP = {
+    'ta-IN': 'ta-IN-PallaviNeural',
+    'hi-IN': 'hi-IN-SwaraNeural',
+    'te-IN': 'te-IN-ShrutiNeural',
+    'ml-IN': 'ml-IN-SobhanaNeural',
+    'bn-IN': 'bn-IN-TanishaaNeural',
+    'mr-IN': 'mr-IN-AarohiNeural',
+    'gu-IN': 'gu-IN-DhwaniNeural',
+    'kn-IN': 'kn-IN-SapnaNeural',
+    'en-IN': 'en-IN-NeerjaNeural',
+    'en': 'en-IN-NeerjaNeural'
+}
+
+async def synthesize_edge_full(text: str, lang_code: str, style: str = "default") -> tuple[bytes, int]:
+    import edge_tts, io
+    import soundfile as sf
+    voice = INDIC_VOICE_MAP.get(lang_code, INDIC_VOICE_MAP.get('hi-IN', 'hi-IN-SwaraNeural'))
+    communicate = edge_tts.Communicate(text, voice)
+    audio_data = b""
+    async for chunk in communicate.stream():
+        if chunk["type"] == "audio":
+            audio_data += chunk["data"]
+            
+    if not audio_data:
+        raise ValueError("Edge-TTS generated empty audio")
+
+    buf = io.BytesIO(audio_data)
+    audio_arr, native_rate = sf.read(buf, dtype="float32")
+    return _audio_to_wav(audio_arr, native_rate)
+
 async def synthesize_full(text, lang_code, style="default", custom_description=None):
-    """Async wrapper for full synthesis."""
+    """Async wrapper for full ultra-fast synthesis."""
     if TTS_PROVIDER == "bhashini":
         return await asyncio.to_thread(_bhashini_synthesize_sync, text, lang_code, style)
+    if TTS_PROVIDER == "parler_slow":
+        return await asyncio.to_thread(_synthesize_sync, text, lang_code, style, custom_description)
     if _is_english(lang_code):
-        return await synthesize_kokoro_full(text, style)
-    return await asyncio.to_thread(_synthesize_sync, text, lang_code, style, custom_description)
+        try:
+            return await synthesize_kokoro_full(text, style)
+        except Exception:
+            return await synthesize_edge_full(text, lang_code, style)
+    return await synthesize_edge_full(text, lang_code, style)
 
 
 async def synthesize(text, lang_code, style="default", custom_description=None):
