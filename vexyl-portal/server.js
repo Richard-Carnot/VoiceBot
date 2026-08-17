@@ -358,59 +358,79 @@ app.post('/v1/translate', authenticateKey, async (req, res) => {
   }
 });
 
-// ── LLM Chat Completion Endpoint (Local Qwen 3 8B on NVIDIA L4 GPU) ──
+// ── LLM Chat Completion Endpoint (Google Gemini 2.5 Flash) ──
 app.post('/v1/chat/completions', authenticateKey, async (req, res) => {
   const startTime = Date.now();
   try {
     const { messages, temperature = 0.6, max_tokens = 512 } = req.body;
-    const targetModel = req.body.model || process.env.LOCAL_LLM_MODEL || 'qwen3:8b';
+    const geminiKey = process.env.GEMINI_API_KEY;
+    const targetModel = req.body.model || process.env.GEMINI_MODEL || 'gemini-2.5-flash';
 
-    // Format messages for standard completion
+    // Separate system instruction from conversational turns for Gemini API
     const rawMessages = messages || [{ role: 'user', content: req.body.prompt || 'Hello' }];
-    const formattedMessages = rawMessages.map(m => ({
-      role: m.role,
-      content: typeof m.content === 'string' ? m.content : (Array.isArray(m.content) ? (m.content[0]?.text || JSON.stringify(m.content)) : JSON.stringify(m.content))
-    }));
+    let systemText = '';
+    const contents = [];
+
+    rawMessages.forEach(m => {
+      const textContent = typeof m.content === 'string' ? m.content : (Array.isArray(m.content) ? (m.content[0]?.text || JSON.stringify(m.content)) : JSON.stringify(m.content));
+      if (m.role === 'system') {
+        systemText = textContent;
+      } else {
+        contents.push({
+          role: m.role === 'assistant' ? 'model' : 'user',
+          parts: [{ text: textContent }]
+        });
+      }
+    });
+
+    if (contents.length === 0) {
+      contents.push({ role: 'user', parts: [{ text: 'Hello' }] });
+    }
+
+    const geminiPayload = {
+      contents: contents,
+      generationConfig: {
+        temperature: temperature,
+        maxOutputTokens: max_tokens
+      }
+    };
+
+    if (systemText) {
+      geminiPayload.system_instruction = {
+        parts: [{ text: systemText }]
+      };
+    }
 
     writeLog('LLM', 'REQUEST', {
       model: targetModel,
-      provider: 'Local Ollama (NVIDIA L4 GPU)',
-      messages_count: formattedMessages.length,
-      messages: formattedMessages
+      provider: 'Google Gemini (Gemini 2.5 Flash)',
+      messages_count: rawMessages.length,
+      last_user_query: contents.filter(c => c.role === 'user').pop()?.parts[0]?.text || ''
     });
 
-    // Call Local Ollama Engine on Port 11434 with persistent GPU keep-alive
-    const ollamaResponse = await fetch('http://127.0.0.1:11434/api/chat', {
+    // Call Google Gemini API
+    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${targetModel}:generateContent?key=${geminiKey}`;
+    const geminiResponse = await fetch(geminiUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model: targetModel,
-        messages: formattedMessages,
-        keep_alive: '24h',
-        options: {
-          temperature: temperature,
-          num_predict: max_tokens
-        },
-        stream: false
-      }),
-      signal: AbortSignal.timeout(30000)
+      body: JSON.stringify(geminiPayload),
+      signal: AbortSignal.timeout(15000)
     });
 
-    if (!ollamaResponse.ok) {
-      const errText = await ollamaResponse.text();
-      writeLog('LLM', 'ERROR', { status: ollamaResponse.status, error: errText });
-      throw new Error(`Local Ollama error ${ollamaResponse.status}: ${errText}`);
+    if (!geminiResponse.ok) {
+      const errText = await geminiResponse.text();
+      writeLog('LLM', 'ERROR', { status: geminiResponse.status, error: errText });
+      throw new Error(`Gemini API error ${geminiResponse.status}: ${errText}`);
     }
 
-    const data = await ollamaResponse.json();
-    let replyContent = data.message ? data.message.content : '';
-
-    // Strip out <think>...</think> if present
-    if (replyContent.includes('</think>')) {
-      replyContent = replyContent.split('</think>')[1].trim();
-    } else {
-      replyContent = replyContent.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+    const data = await geminiResponse.json();
+    let replyContent = '';
+    if (data.candidates && data.candidates[0] && data.candidates[0].content && data.candidates[0].content.parts) {
+      replyContent = data.candidates[0].content.parts.map(p => p.text || '').join('').trim();
     }
+
+    // Clean any residual reasoning tags
+    replyContent = replyContent.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
 
     const latencyMs = Date.now() - startTime;
 
@@ -418,15 +438,15 @@ app.post('/v1/chat/completions', authenticateKey, async (req, res) => {
       model: targetModel,
       latency_ms: latencyMs,
       reply_text: replyContent,
-      eval_count: data.eval_count,
-      eval_duration_ms: data.eval_duration ? Math.round(data.eval_duration / 1e6) : null
+      usage: data.usageMetadata || null
     });
 
     return res.json({
       model: targetModel,
       message: { role: 'assistant', content: replyContent },
       done: true,
-      latency_ms: latencyMs
+      latency_ms: latencyMs,
+      usage: data.usageMetadata || null
     });
   } catch (err) {
     writeLog('LLM', 'ERROR', { error: err.message });
@@ -471,7 +491,7 @@ app.get('/api/status', (req, res) => {
       { name: 'Speech-to-Text (STT)', port: 8091, status: 'active', model: 'CR_stt1' },
       { name: 'Text-to-Speech (TTS)', port: 8092, status: 'active', model: 'CR_voice1' },
       { name: 'Translation NMT', port: 8000, status: 'active', model: 'CR_trans' },
-      { name: 'Conversational LLM', port: 11434, status: 'active', model: 'Qwen 3 (8B) [Local L4 GPU]' }
+      { name: 'Conversational LLM', port: 443, status: 'active', model: 'Google Gemini 2.5 Flash [Cloud API]' }
     ]
   });
 });

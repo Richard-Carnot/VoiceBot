@@ -1016,8 +1016,8 @@ function initVoiceAgent() {
 async function processAgentUserQuery(userText) {
   stopAgentSpeaking();
   document.getElementById('userLiveText').textContent = `"${userText}"`;
-  document.getElementById('aiLiveText').textContent = 'Generating spoken response on GPU...';
-  setAgentState('thinking', 'Qwen 3 (8B) is generating response on GPU...');
+  document.getElementById('aiLiveText').textContent = 'Generating spoken response...';
+  setAgentState('thinking', 'Gemini 2.5 Flash is generating response...');
 
   const langCode = document.getElementById('agentLangSelect').value || 'hi-IN';
   const voice = document.getElementById('agentVoiceSelect').value || 'CR_voice1';
@@ -1044,7 +1044,7 @@ Keep your response short, natural, friendly, and spoken-friendly (1-2 sentences 
   ];
 
   try {
-    // Call Qwen 3 (8B) running locally on NVIDIA L4 GPU via Portal Gateway
+    // Call Google Gemini 2.5 Flash via Portal Gateway
     console.log('[Voice Agent] Sending query to /v1/chat/completions:', userText);
     const llmRes = await fetch('/v1/chat/completions', {
       method: 'POST',
@@ -1053,7 +1053,7 @@ Keep your response short, natural, friendly, and spoken-friendly (1-2 sentences 
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        model: 'qwen3:8b',
+        model: 'gemini-2.5-flash',
         messages: messagesToSend,
         temperature: 0.6,
         max_tokens: 200
