@@ -933,6 +933,7 @@ let agentAudioContext = null;
 let agentAnalyser = null;
 let agentDataArray = null;
 let agentCurrentAudio = null;
+let agentConversationHistory = [];
 const langConfigMap = {
   'en-IN': { name: 'English', script: 'English alphabet', greeting: 'Hello! I am Carnot Voice AI. How can I assist you today?' },
   'hi-IN': { name: 'Hindi', script: 'Devanagari script (हिन्दी)', greeting: 'नमस्ते! मैं Carnot Voice AI हूँ। मैं आज आपकी क्या सहायता कर सकता हूँ?' },
@@ -942,7 +943,7 @@ const langConfigMap = {
   'bn-IN': { name: 'Bengali', script: 'Bengali script (বাংলা)', greeting: 'নমস্কার! আমি Carnot Voice AI। আজ আমি আপনাকে কীভাবে সাহায্য করতে পারি?' },
   'mr-IN': { name: 'Marathi', script: 'Devanagari script (मराठी)', greeting: 'नमस्कार! मी Carnot Voice AI आहे. आज मी तुम्हाला कशी मदत करू शकतो?' },
   'gu-IN': { name: 'Gujarati', script: 'Gujarati script (ગુજરાતી)', greeting: 'નમસ્તે! હું Carnot Voice AI છું. આજે હું તમને કેવી રીતે મદદ કરી શકું?' },
-  'kn-IN': { name: 'Kannada', script: 'Kannada script (ಕನ್ನಡ)', greeting: 'ನಮಸ್ಕಾರ! ನಾನು Carnot Voice AI. ಇಂದು ನಾನು ನಿಮಗೆ ಹೇಗೆ ಸಹಾಯ ಮಾಡಬಹುದು?' }
+  'kn-IN': { name: 'Kannada', script: 'Kannada script (ಕನ್ನಡ)', greeting: 'ನಮස්ಕಾರ! ನಾನು Carnot Voice AI. ಇಂದು ನಾನು ನಿಮಗೆ ಹೇಗೆ ಸಹಾಯ ಮಾಡಬಹುದು?' }
 };
 
 function initVoiceAgent() {
@@ -979,10 +980,10 @@ function initVoiceAgent() {
 
   if (btnSendText) {
     btnSendText.addEventListener('click', () => {
-      const q = textInput.value.trim();
-      if (q) {
+      const text = textInput ? textInput.value.trim() : '';
+      if (text) {
         textInput.value = '';
-        processAgentUserQuery(q);
+        processAgentUserQuery(text);
       }
     });
   }
@@ -990,10 +991,10 @@ function initVoiceAgent() {
   if (textInput) {
     textInput.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') {
-        const q = textInput.value.trim();
-        if (q) {
+        const text = textInput.value.trim();
+        if (text) {
           textInput.value = '';
-          processAgentUserQuery(q);
+          processAgentUserQuery(text);
         }
       }
     });
@@ -1002,9 +1003,9 @@ function initVoiceAgent() {
   if (btnReset) {
     btnReset.addEventListener('click', () => {
       stopAgentSpeaking();
-      const selected = (langSelect ? langSelect.value : 'hi-IN');
-      const cfg = langConfigMap[selected] || langConfigMap['hi-IN'];
       agentConversationHistory = [];
+      const lang = document.getElementById('agentLangSelect')?.value || 'hi-IN';
+      const cfg = langConfigMap[lang] || langConfigMap['hi-IN'];
       setAgentState('idle', 'Conversation reset. Tap mic to talk.');
       document.getElementById('userLiveText').textContent = '"Speak to start conversational voice agent..."';
       document.getElementById('aiLiveText').textContent = `"${cfg.greeting}"`;
@@ -1015,7 +1016,7 @@ function initVoiceAgent() {
 async function processAgentUserQuery(userText) {
   stopAgentSpeaking();
   document.getElementById('userLiveText').textContent = `"${userText}"`;
-  document.getElementById('aiLiveText').textContent = 'Generating spoken response...';
+  document.getElementById('aiLiveText').textContent = 'Generating spoken response on GPU...';
   setAgentState('thinking', 'Qwen 3 (8B) is generating response on GPU...');
 
   const langCode = document.getElementById('agentLangSelect').value || 'hi-IN';
@@ -1044,6 +1045,7 @@ Keep your response short, natural, friendly, and spoken-friendly (1-2 sentences 
 
   try {
     // Call Qwen 3 (8B) running locally on NVIDIA L4 GPU via Portal Gateway
+    console.log('[Voice Agent] Sending query to /v1/chat/completions:', userText);
     const llmRes = await fetch('/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -1058,6 +1060,11 @@ Keep your response short, natural, friendly, and spoken-friendly (1-2 sentences 
       })
     });
 
+    if (!llmRes.ok) {
+      const errData = await llmRes.json().catch(() => ({}));
+      throw new Error(errData.error || `LLM Gateway Error (${llmRes.status})`);
+    }
+
     const llmData = await llmRes.json();
     let replyText = (llmData.message && llmData.message.content) ? llmData.message.content.trim() : '';
 
@@ -1065,12 +1072,14 @@ Keep your response short, natural, friendly, and spoken-friendly (1-2 sentences 
       replyText = langCfg.greeting;
     }
 
+    console.log('[Voice Agent] LLM response received:', replyText);
     agentConversationHistory.push({ role: 'assistant', content: replyText });
     document.getElementById('aiLiveText').textContent = `"${replyText}"`;
 
     // Synthesize Speech via CR_voice1 TTS
     setAgentState('speaking', 'Carnot Voice AI is speaking...');
 
+    console.log('[Voice Agent] Synthesizing speech with CR_voice1:', replyText);
     const ttsRes = await fetch('/v1/tts/generate', {
       method: 'POST',
       headers: {
@@ -1087,8 +1096,14 @@ Keep your response short, natural, friendly, and spoken-friendly (1-2 sentences 
       })
     });
 
+    if (!ttsRes.ok) {
+      const errData = await ttsRes.json().catch(() => ({}));
+      throw new Error(errData.error || `TTS Gateway Error (${ttsRes.status})`);
+    }
+
     const ttsData = await ttsRes.json();
     if (ttsData.audio_b64) {
+      console.log('[Voice Agent] Audio received, playing back...');
       playAgentAudio(ttsData.audio_b64);
     } else {
       setAgentState('idle', 'Spoken response complete.');
