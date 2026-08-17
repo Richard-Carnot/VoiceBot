@@ -457,6 +457,207 @@ app.post('/v1/chat/completions', authenticateKey, async (req, res) => {
   }
 });
 
+// ── Streaming Voice Pipeline: Gemini LLM → Sentence-Chunked TTS (SSE) ──
+app.post('/v1/voice/stream', authenticateKey, async (req, res) => {
+  const startTime = Date.now();
+  const { messages, temperature = 0.6, max_tokens = 1024 } = req.body;
+  const langCode = req.body.target_language || 'hi-IN';
+  const voice = req.body.voice || 'default';
+  const geminiKey = process.env.GEMINI_API_KEY;
+  const targetModel = req.body.model || process.env.GEMINI_MODEL || 'gemini-2.5-flash';
+
+  // Setup SSE headers
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache',
+    'Connection': 'keep-alive',
+    'X-Accel-Buffering': 'no'
+  });
+
+  function sendSSE(event, data) {
+    res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+  }
+
+  try {
+    // 1. Format messages for Gemini
+    const rawMessages = messages || [{ role: 'user', content: req.body.prompt || 'Hello' }];
+    let systemText = '';
+    const contents = [];
+    rawMessages.forEach(m => {
+      const textContent = typeof m.content === 'string' ? m.content : (Array.isArray(m.content) ? (m.content[0]?.text || JSON.stringify(m.content)) : JSON.stringify(m.content));
+      if (m.role === 'system') { systemText = textContent; }
+      else { contents.push({ role: m.role === 'assistant' ? 'model' : 'user', parts: [{ text: textContent }] }); }
+    });
+    if (contents.length === 0) contents.push({ role: 'user', parts: [{ text: 'Hello' }] });
+
+    const geminiPayload = {
+      contents,
+      generationConfig: { temperature, maxOutputTokens: Math.max(max_tokens, 2048), thinkingConfig: { thinkingBudget: 0 } }
+    };
+    if (systemText) geminiPayload.system_instruction = { parts: [{ text: systemText }] };
+
+    writeLog('VOICE_STREAM', 'REQUEST', { model: targetModel, messages_count: rawMessages.length });
+    sendSSE('status', { stage: 'llm_start', model: targetModel });
+
+    // 2. Call Gemini with streaming
+    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${targetModel}:streamGenerateContent?key=${geminiKey}&alt=sse`;
+    const geminiResponse = await fetch(geminiUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(geminiPayload),
+      signal: AbortSignal.timeout(20000)
+    });
+
+    if (!geminiResponse.ok) {
+      const errText = await geminiResponse.text();
+      sendSSE('error', { error: `Gemini API error: ${errText}` });
+      res.end();
+      return;
+    }
+
+    // 3. Read streaming response, accumulate text, split by sentence boundaries
+    const reader = geminiResponse.body;
+    let fullText = '';
+    let sentenceBuffer = '';
+    let sentenceIndex = 0;
+    let firstTokenTime = null;
+
+    // Tamil/Hindi/Indic sentence boundary regex: . ! ? | (Tamil period) ।
+    const sentenceBoundary = /[.!?।\u0964\u0965]\s*/;
+
+    // Helper: synthesize a sentence chunk via CR_voice1 TTS WebSocket
+    function synthesizeSentence(sentence, idx) {
+      return new Promise((resolve, reject) => {
+        const ws = new WebSocket('ws://127.0.0.1:8092');
+        ws.on('open', () => {
+          ws.send(JSON.stringify({
+            type: 'synthesize',
+            request_id: `stream_${Date.now()}_${idx}`,
+            text: sentence,
+            lang: langCode,
+            style: voice,
+            stream: false
+          }));
+        });
+        ws.on('message', (data) => {
+          try {
+            const msg = JSON.parse(data.toString());
+            if (msg.type === 'ready') return; // skip initial ready message
+            if (msg.type === 'final' || msg.audio_b64 || msg.audio) {
+              ws.close();
+              resolve(msg.audio_b64 || msg.audio || '');
+            } else if (msg.type === 'error') {
+              ws.close();
+              reject(new Error(msg.message || 'TTS Error'));
+            }
+          } catch (e) { /* ignore parse errors on ready message */ }
+        });
+        ws.on('error', (err) => reject(err));
+        setTimeout(() => { try { ws.close(); } catch(e){} reject(new Error('TTS timeout')); }, 10000);
+      });
+    }
+
+    // Process Gemini SSE stream
+    const textDecoder = new TextDecoder();
+    let sseBuffer = '';
+
+    for await (const chunk of reader) {
+      sseBuffer += textDecoder.decode(chunk, { stream: true });
+      
+      // Parse SSE lines
+      const lines = sseBuffer.split('\n');
+      sseBuffer = lines.pop() || ''; // keep incomplete last line
+
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue;
+        const jsonStr = line.slice(6).trim();
+        if (!jsonStr || jsonStr === '[DONE]') continue;
+
+        try {
+          const parsed = JSON.parse(jsonStr);
+          if (parsed.candidates && parsed.candidates[0] && parsed.candidates[0].content && parsed.candidates[0].content.parts) {
+            for (const part of parsed.candidates[0].content.parts) {
+              if (part.text) {
+                if (!firstTokenTime) firstTokenTime = Date.now();
+                sentenceBuffer += part.text;
+                fullText += part.text;
+
+                // Check for sentence boundaries in buffer
+                let match;
+                while ((match = sentenceBuffer.match(sentenceBoundary))) {
+                  const boundaryIdx = match.index + match[0].length;
+                  const sentence = sentenceBuffer.slice(0, boundaryIdx).trim();
+                  sentenceBuffer = sentenceBuffer.slice(boundaryIdx);
+
+                  if (sentence.length > 2) {
+                    sendSSE('text_chunk', { index: sentenceIndex, text: sentence });
+                    
+                    // Synthesize this sentence immediately
+                    try {
+                      const audioB64 = await synthesizeSentence(sentence, sentenceIndex);
+                      if (audioB64) {
+                        sendSSE('audio_chunk', { 
+                          index: sentenceIndex, 
+                          text: sentence, 
+                          audio_b64: audioB64,
+                          latency_ms: Date.now() - startTime
+                        });
+                      }
+                    } catch (ttsErr) {
+                      writeLog('VOICE_STREAM', 'TTS_CHUNK_ERROR', { sentence, error: ttsErr.message });
+                    }
+                    sentenceIndex++;
+                  }
+                }
+              }
+            }
+          }
+        } catch (parseErr) { /* skip unparseable SSE chunks */ }
+      }
+    }
+
+    // Flush remaining buffer as final sentence
+    const remaining = sentenceBuffer.trim();
+    if (remaining.length > 2) {
+      sendSSE('text_chunk', { index: sentenceIndex, text: remaining });
+      try {
+        const audioB64 = await synthesizeSentence(remaining, sentenceIndex);
+        if (audioB64) {
+          sendSSE('audio_chunk', { index: sentenceIndex, text: remaining, audio_b64: audioB64, latency_ms: Date.now() - startTime });
+        }
+      } catch (ttsErr) {
+        writeLog('VOICE_STREAM', 'TTS_FLUSH_ERROR', { text: remaining, error: ttsErr.message });
+      }
+      sentenceIndex++;
+      fullText += ''; // already accumulated
+    }
+
+    const totalLatency = Date.now() - startTime;
+    const ttft = firstTokenTime ? (firstTokenTime - startTime) : totalLatency;
+
+    sendSSE('done', { 
+      full_text: fullText.trim(),
+      total_sentences: sentenceIndex,
+      time_to_first_token_ms: ttft,
+      total_latency_ms: totalLatency
+    });
+
+    writeLog('VOICE_STREAM', 'COMPLETE', {
+      model: targetModel,
+      total_sentences: sentenceIndex,
+      time_to_first_token_ms: ttft,
+      total_latency_ms: totalLatency,
+      full_text: fullText.trim()
+    });
+
+  } catch (err) {
+    writeLog('VOICE_STREAM', 'ERROR', { error: err.message });
+    sendSSE('error', { error: err.message });
+  }
+
+  res.end();
+});
+
 // ── Raw Log Viewing & API Inspection Endpoint ──
 app.get('/api/logs', (req, res) => {
   const file = req.query.file || 'activity.log';

@@ -1016,14 +1016,13 @@ function initVoiceAgent() {
 async function processAgentUserQuery(userText) {
   stopAgentSpeaking();
   document.getElementById('userLiveText').textContent = `"${userText}"`;
-  document.getElementById('aiLiveText').textContent = 'Generating spoken response...';
-  setAgentState('thinking', 'Gemini 2.5 Flash is generating response...');
+  document.getElementById('aiLiveText').textContent = 'Streaming response...';
+  setAgentState('thinking', 'Gemini 2.5 Flash → CR_voice1 streaming...');
 
   const langCode = document.getElementById('agentLangSelect').value || 'hi-IN';
   const voice = document.getElementById('agentVoiceSelect').value || 'CR_voice1';
   const langCfg = langConfigMap[langCode] || langConfigMap['hi-IN'];
 
-  // Dynamic language prompt instruction
   let systemInstruction = '';
   if (langCode === 'en-IN') {
     systemInstruction = `You are Carnot Voice AI, an ultra-fast, intelligent voice assistant.
@@ -1043,10 +1042,43 @@ Keep your response short, natural, friendly, and spoken-friendly (1-2 sentences 
     ...agentConversationHistory.filter(m => m.role !== 'system')
   ];
 
+  // ── Streaming Voice Pipeline: Gemini → Sentence TTS → Gapless Audio Queue ──
+  const audioQueue = [];
+  let isPlayingQueue = false;
+  let fullResponseText = '';
+
+  function playNextInQueue() {
+    if (audioQueue.length === 0) {
+      isPlayingQueue = false;
+      setAgentState('idle', 'Conversation active. Tap mic to reply.');
+      return;
+    }
+    isPlayingQueue = true;
+    const { audioB64 } = audioQueue.shift();
+    const audio = new Audio(`data:audio/wav;base64,${audioB64}`);
+    agentCurrentAudio = audio;
+
+    // Connect analyser for orb visualizer
+    try {
+      if (!agentAudioContext) agentAudioContext = new (window.AudioContext || window.webkitAudioContext)();
+      if (agentAudioContext.state === 'suspended') agentAudioContext.resume();
+      const source = agentAudioContext.createMediaElementSource(audio);
+      agentAnalyser = agentAudioContext.createAnalyser();
+      agentAnalyser.fftSize = 64;
+      source.connect(agentAnalyser);
+      agentAnalyser.connect(agentAudioContext.destination);
+      agentDataArray = new Uint8Array(agentAnalyser.frequencyBinCount);
+    } catch (e) {}
+
+    audio.onended = () => { playNextInQueue(); };
+    audio.onerror = () => { playNextInQueue(); };
+    audio.play().catch(() => { playNextInQueue(); });
+  }
+
   try {
-    // Call Google Gemini 2.5 Flash via Portal Gateway
-    console.log('[Voice Agent] Sending query to /v1/chat/completions:', userText);
-    const llmRes = await fetch('/v1/chat/completions', {
+    console.log('[Voice Stream] Starting streaming pipeline for:', userText);
+
+    const response = await fetch('/v1/voice/stream', {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${activeApiKey}`,
@@ -1056,39 +1088,7 @@ Keep your response short, natural, friendly, and spoken-friendly (1-2 sentences 
         model: 'gemini-2.5-flash',
         messages: messagesToSend,
         temperature: 0.6,
-        max_tokens: 1024
-      })
-    });
-
-    if (!llmRes.ok) {
-      const errData = await llmRes.json().catch(() => ({}));
-      throw new Error(errData.error || `LLM Gateway Error (${llmRes.status})`);
-    }
-
-    const llmData = await llmRes.json();
-    let replyText = (llmData.message && llmData.message.content) ? llmData.message.content.trim() : '';
-
-    if (!replyText) {
-      replyText = langCfg.greeting;
-    }
-
-    console.log('[Voice Agent] LLM response received:', replyText);
-    agentConversationHistory.push({ role: 'assistant', content: replyText });
-    document.getElementById('aiLiveText').textContent = `"${replyText}"`;
-
-    // Synthesize Speech via CR_voice1 TTS
-    setAgentState('speaking', 'Carnot Voice AI is speaking...');
-
-    console.log('[Voice Agent] Synthesizing speech with CR_voice1:', replyText);
-    const ttsRes = await fetch('/v1/tts/generate', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${activeApiKey}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        text: replyText,
-        model: voice,
+        max_tokens: 1024,
         target_language: langCode,
         voice: 'default',
         pace: 1.0,
@@ -1096,21 +1096,98 @@ Keep your response short, natural, friendly, and spoken-friendly (1-2 sentences 
       })
     });
 
-    if (!ttsRes.ok) {
-      const errData = await ttsRes.json().catch(() => ({}));
-      throw new Error(errData.error || `TTS Gateway Error (${ttsRes.status})`);
+    if (!response.ok) {
+      throw new Error(`Stream error (${response.status})`);
     }
 
-    const ttsData = await ttsRes.json();
-    if (ttsData.audio_b64) {
-      console.log('[Voice Agent] Audio received, playing back...');
-      playAgentAudio(ttsData.audio_b64);
-    } else {
-      setAgentState('idle', 'Spoken response complete.');
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let sseBuffer = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      sseBuffer += decoder.decode(value, { stream: true });
+      const lines = sseBuffer.split('\n');
+      sseBuffer = lines.pop() || '';
+
+      let currentEvent = null;
+      for (const line of lines) {
+        if (line.startsWith('event: ')) {
+          currentEvent = line.slice(7).trim();
+        }
+        if (line.startsWith('data: ') && currentEvent) {
+          try {
+            const data = JSON.parse(line.slice(6));
+
+            if (currentEvent === 'text_chunk') {
+              fullResponseText += (fullResponseText ? ' ' : '') + data.text;
+              document.getElementById('aiLiveText').textContent = `"${fullResponseText}"`;
+            }
+
+            if (currentEvent === 'audio_chunk') {
+              console.log(`[Voice Stream] Audio chunk #${data.index} received (${data.latency_ms}ms)`);
+              audioQueue.push({ audioB64: data.audio_b64 });
+              if (!isPlayingQueue) {
+                setAgentState('speaking', 'Carnot Voice AI is speaking...');
+                playNextInQueue();
+              }
+            }
+
+            if (currentEvent === 'done') {
+              console.log(`[Voice Stream] Complete: ${data.total_sentences} sentences, TTFT: ${data.time_to_first_token_ms}ms, Total: ${data.total_latency_ms}ms`);
+              if (data.full_text) {
+                agentConversationHistory.push({ role: 'assistant', content: data.full_text });
+              }
+            }
+
+            if (currentEvent === 'error') {
+              throw new Error(data.error);
+            }
+          } catch (parseErr) {
+            if (currentEvent === 'error') throw parseErr;
+          }
+          currentEvent = null;
+        }
+      }
+    }
+
+    // If no audio was received, fall back
+    if (audioQueue.length === 0 && !isPlayingQueue) {
+      if (!fullResponseText) fullResponseText = langCfg.greeting;
+      document.getElementById('aiLiveText').textContent = `"${fullResponseText}"`;
+      agentConversationHistory.push({ role: 'assistant', content: fullResponseText });
+      setAgentState('idle', 'Response complete.');
     }
   } catch (err) {
-    setAgentState('idle', 'Error: ' + err.message);
-    document.getElementById('aiLiveText').textContent = 'Error: ' + err.message;
+    console.error('[Voice Stream Error]:', err);
+    // Fallback to batch mode
+    console.log('[Voice Stream] Falling back to batch mode...');
+    try {
+      const llmRes = await fetch('/v1/chat/completions', {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${activeApiKey}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model: 'gemini-2.5-flash', messages: messagesToSend, temperature: 0.6, max_tokens: 1024 })
+      });
+      const llmData = await llmRes.json();
+      let replyText = (llmData.message && llmData.message.content) ? llmData.message.content.trim() : langCfg.greeting;
+      document.getElementById('aiLiveText').textContent = `"${replyText}"`;
+      agentConversationHistory.push({ role: 'assistant', content: replyText });
+
+      setAgentState('speaking', 'Speaking...');
+      const ttsRes = await fetch('/v1/tts/generate', {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${activeApiKey}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: replyText, model: voice, target_language: langCode, voice: 'default', pace: 1.0, sample_rate: 44100 })
+      });
+      const ttsData = await ttsRes.json();
+      if (ttsData.audio_b64) playAgentAudio(ttsData.audio_b64);
+      else setAgentState('idle', 'Response complete.');
+    } catch (fallbackErr) {
+      setAgentState('idle', 'Error: ' + fallbackErr.message);
+      document.getElementById('aiLiveText').textContent = 'Error: ' + fallbackErr.message;
+    }
   }
 }
 
@@ -1174,12 +1251,40 @@ async function startAgentListening() {
     };
 
     agentMediaRecorder.start();
-    setAgentState('listening', 'Listening to you... (Tap to finish)');
+    setAgentState('listening', 'Listening... (auto-stops on silence)');
     document.getElementById('userLiveText').textContent = '"Listening..."';
+
+    // ── VAD: Auto-Stop on Silence Detection ──
+    let silenceStart = null;
+    let hasSpoken = false;
+    const SILENCE_THRESHOLD = 15;  // Energy level below which is "silence"
+    const SILENCE_DURATION_MS = 1200; // Stop after 1.2s of silence
+    const vadArray = new Uint8Array(agentAnalyser.frequencyBinCount);
+
+    const vadInterval = setInterval(() => {
+      if (agentState !== 'listening' || !agentAnalyser) {
+        clearInterval(vadInterval);
+        return;
+      }
+      agentAnalyser.getByteFrequencyData(vadArray);
+      const avgEnergy = vadArray.reduce((sum, v) => sum + v, 0) / vadArray.length;
+
+      if (avgEnergy > SILENCE_THRESHOLD) {
+        hasSpoken = true;
+        silenceStart = null;
+      } else if (hasSpoken) {
+        if (!silenceStart) silenceStart = Date.now();
+        else if (Date.now() - silenceStart > SILENCE_DURATION_MS) {
+          clearInterval(vadInterval);
+          console.log('[VAD] Silence detected — auto-stopping recording');
+          stopAgentListeningAndProcess();
+        }
+      }
+    }, 100);
+
   } catch (err) {
     console.warn('Microphone permission fallback:', err);
-    // Fallback: Simulate sample query if mic not permitted
-    const sampleQuery = prompt('Microphone not available in this browser context. Type your query for Carnot Voice AI:', 'Tell me about Carnot Research AI platform in 2 sentences.');
+    const sampleQuery = prompt('Microphone not available. Type your query:', 'Tell me about Carnot Research AI platform in 2 sentences.');
     if (sampleQuery) {
       processAgentUserQuery(sampleQuery);
     }
