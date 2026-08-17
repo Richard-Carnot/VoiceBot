@@ -99,6 +99,9 @@
         <a href="#api-status" class="menu-item" data-tab="api-status">
           <i class="fa-solid fa-chart-line"></i> Telemetry & Status
         </a>
+        <a href="#logs" class="menu-item" data-tab="logs">
+          <i class="fa-solid fa-terminal"></i> Activity Logs
+        </a>
       </nav>
 
       <div class="sidebar-footer">
@@ -895,7 +898,7 @@ Body:
           <div class="voice-agent-header">
             <div class="agent-model-tag">
               <span class="pulse-dot"></span>
-              <span><strong>Carnot Realtime Voice AI</strong> • Llama 3.3 (70B) [Groq] + CR_voice1 + CR_stt1</span>
+              <span><strong>Carnot Realtime Voice AI</strong> • Qwen 3.6 (27B) [Groq] + CR_voice1 + CR_stt1</span>
             </div>
 
             <div class="voice-agent-selectors">
@@ -945,26 +948,8 @@ Body:
               </div>
               <div class="transcript-line ai-line" id="aiLiveTranscript">
                 <span class="transcript-role"><i class="fa-solid fa-bolt"></i></span>
-                <span class="transcript-text" id="aiLiveText">"Hello! I am Carnot Voice AI powered by Qwen 3.6 (27B) + CR_voice1 + CR_stt1. How can I assist you today?"</span>
+                <span class="transcript-text" id="aiLiveText">"Hello! I am Carnot Voice AI running locally on NVIDIA L4 GPU with Qwen 3.5. How can I assist you today?"</span>
               </div>
-            </div>
-          </div>
-
-          <!-- Real-Time Activity & Network Trace Inspector -->
-          <div class="voice-debug-panel" id="voiceDebugPanel">
-            <div class="debug-panel-header" id="toggleDebugLogs">
-              <div class="debug-header-title">
-                <i class="fa-solid fa-terminal"></i>
-                <span>Live Activity & Network Trace Logs</span>
-                <span class="badge badge-pulse" id="debugLogsBadge">Ready</span>
-              </div>
-              <div class="debug-header-actions">
-                <button class="debug-clear-btn" id="btnClearDebugLogs" title="Clear Logs"><i class="fa-solid fa-trash-can"></i> Clear</button>
-                <i class="fa-solid fa-chevron-up toggle-icon" id="debugToggleIcon"></i>
-              </div>
-            </div>
-            <div class="debug-panel-body" id="debugLogsBody">
-              <div class="debug-log-empty" id="debugEmptyNotice">Ready. Tap microphone or type a query to stream live request/response inspection.</div>
             </div>
           </div>
 
@@ -986,6 +971,37 @@ Body:
             </button>
           </div>
 
+        </div>
+      </section>
+
+      <!-- ── TAB 9: LIVE SYSTEM & ACTIVITY LOGS VIEWER ── -->
+      <section class="tab-pane hidden" id="tab-logs">
+        <div class="card">
+          <div class="card-header flex-between">
+            <div>
+              <h3><i class="fa-solid fa-terminal"></i> Platform Activity & Request Logs</h3>
+              <p class="section-desc">Real-time inspection of STT, TTS, Groq LLM, and Translation payloads with timestamps and latency.</p>
+            </div>
+            <div class="logs-header-actions">
+              <span class="file-path-badge"><i class="fa-solid fa-folder-open"></i> /home/gcpuser/STT-TTS/logs/</span>
+              <button class="btn btn-secondary btn-sm" id="btnRefreshLogs"><i class="fa-solid fa-rotate"></i> Refresh</button>
+              <button class="btn btn-primary btn-sm" id="btnDownloadLogs"><i class="fa-solid fa-download"></i> Download</button>
+            </div>
+          </div>
+
+          <!-- Log File Filter Pills -->
+          <div class="log-filter-bar">
+            <button class="log-filter-btn active" data-file="activity.log"><i class="fa-solid fa-list-check"></i> All Activity</button>
+            <button class="log-filter-btn" data-file="llm.log"><i class="fa-solid fa-brain"></i> LLM (Groq)</button>
+            <button class="log-filter-btn" data-file="stt.log"><i class="fa-solid fa-microphone"></i> STT (CR_stt1)</button>
+            <button class="log-filter-btn" data-file="tts.log"><i class="fa-solid fa-volume-high"></i> TTS (CR_voice1)</button>
+            <button class="log-filter-btn" data-file="translate.log"><i class="fa-solid fa-language"></i> Translation</button>
+          </div>
+
+          <!-- Terminal Style Log Display -->
+          <div class="terminal-log-viewer" id="terminalLogViewer">
+            <pre class="terminal-log-code" id="terminalLogCode">Loading live server logs...</pre>
+          </div>
         </div>
       </section>
 
@@ -1012,6 +1028,6 @@ Body:
     </div>
   </div>
 
-  <script src="app.js?v=20260817_logs_v2"></script>
+  <script src="app.js?v=20260817_logs_v3"></script>
 </body>
 </html>

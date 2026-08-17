@@ -1,5 +1,3 @@
-// ── Carnot Research Developer Portal & Playground App Controller ──
-
 document.addEventListener('DOMContentLoaded', () => {
   initAuth();
   initThemeSwitcher();
@@ -11,6 +9,7 @@ document.addEventListener('DOMContentLoaded', () => {
   initTranslatePlayground();
   initApiKeyManagement();
   initModelCatalogueFilters();
+  initLogsViewer();
   loadSystemStatus();
 });
 
@@ -148,9 +147,14 @@ function switchTab(tabId) {
     stt: 'Speech to Text Playground',
     translate: 'Translation Playground',
     'api-status': 'Telemetry & System Status',
+    logs: 'Platform Activity & Request Logs',
     documentation: 'API Reference & Documentation'
   };
   document.getElementById('pageTitle').textContent = titleMap[tabId] || 'Carnot Research Portal';
+
+  if (tabId === 'logs') {
+    fetchAndRenderLogs();
+  }
 }
 
 window.switchTab = switchTab;
@@ -941,41 +945,6 @@ const langConfigMap = {
   'kn-IN': { name: 'Kannada', script: 'Kannada script (ಕನ್ನಡ)', greeting: 'ನಮಸ್ಕಾರ! ನಾನು Carnot Voice AI. ಇಂದು ನಾನು ನಿಮಗೆ ಹೇಗೆ ಸಹಾಯ ಮಾಡಬಹುದು?' }
 };
 
-let debugLogCount = 0;
-function logLiveActivity(type, title, payload, latencyMs) {
-  debugLogCount++;
-  const badge = document.getElementById('debugLogsBadge');
-  if (badge) badge.textContent = `${debugLogCount} Events`;
-
-  const emptyNotice = document.getElementById('debugEmptyNotice');
-  if (emptyNotice) emptyNotice.style.display = 'none';
-
-  const body = document.getElementById('debugLogsBody');
-  if (!body) return;
-
-  const now = new Date().toTimeString().split(' ')[0];
-  const entry = document.createElement('div');
-  entry.className = `debug-log-entry ${type.toLowerCase()}`;
-
-  const payloadStr = typeof payload === 'object' ? JSON.stringify(payload, null, 2) : String(payload);
-
-  entry.innerHTML = `
-    <div class="log-meta">
-      <span class="log-tag ${type.toLowerCase()}">${type}</span>
-      <span>${now}</span>
-      ${latencyMs ? `<span>• ⚡ ${latencyMs}ms</span>` : ''}
-    </div>
-    <div class="log-content">${escapeHtml(title)}</div>
-    ${payload ? `<div class="log-payload"><code>${escapeHtml(payloadStr)}</code></div>` : ''}
-  `;
-
-  body.appendChild(entry);
-  body.scrollTop = body.scrollHeight;
-
-  // Also print formatted console logs in browser DevTools
-  console.log(`%c[${type}] ${now} %c${title}`, 'background:#4f46e5;color:#fff;padding:2px 6px;border-radius:3px;', 'font-weight:bold;color:#38bdf8;', payload || '');
-}
-
 function initVoiceAgent() {
   const canvas = document.getElementById('voiceOrbCanvas');
   if (!canvas) return;
@@ -985,35 +954,9 @@ function initVoiceAgent() {
   const textInput = document.getElementById('agentTextInput');
   const btnReset = document.getElementById('btnAgentReset');
   const langSelect = document.getElementById('agentLangSelect');
-  const btnClearLogs = document.getElementById('btnClearDebugLogs');
-  const toggleLogs = document.getElementById('toggleDebugLogs');
-  const logsBody = document.getElementById('debugLogsBody');
-  const toggleIcon = document.getElementById('debugToggleIcon');
 
   // Start animated fluid glowing orb canvas loop
   startOrbAnimation(canvas);
-
-  if (toggleLogs && logsBody) {
-    toggleLogs.addEventListener('click', (e) => {
-      if (e.target.closest('#btnClearDebugLogs')) return;
-      const isCollapsed = logsBody.style.display === 'none';
-      logsBody.style.display = isCollapsed ? 'flex' : 'none';
-      if (toggleIcon) {
-        toggleIcon.className = isCollapsed ? 'fa-solid fa-chevron-up toggle-icon' : 'fa-solid fa-chevron-down toggle-icon';
-      }
-    });
-  }
-
-  if (btnClearLogs) {
-    btnClearLogs.addEventListener('click', () => {
-      if (logsBody) {
-        logsBody.innerHTML = '<div class="debug-log-empty" id="debugEmptyNotice">Logs cleared. Speak or type to inspect live calls.</div>';
-      }
-      debugLogCount = 0;
-      const badge = document.getElementById('debugLogsBadge');
-      if (badge) badge.textContent = '0 Events';
-    });
-  }
 
   if (langSelect) {
     langSelect.addEventListener('change', () => {
@@ -1021,7 +964,6 @@ function initVoiceAgent() {
       const cfg = langConfigMap[selected] || langConfigMap['hi-IN'];
       document.getElementById('aiLiveText').textContent = `"${cfg.greeting}"`;
       setAgentState('idle', `Language switched to ${cfg.name}. Tap mic to talk.`);
-      logLiveActivity('CONFIG', `Language changed to ${cfg.name} (${selected})`, { target_language: selected, script: cfg.script });
     });
   }
 
@@ -1066,7 +1008,6 @@ function initVoiceAgent() {
       setAgentState('idle', 'Conversation reset. Tap mic to talk.');
       document.getElementById('userLiveText').textContent = '"Speak to start conversational voice agent..."';
       document.getElementById('aiLiveText').textContent = `"${cfg.greeting}"`;
-      logLiveActivity('RESET', 'Conversation history cleared');
     });
   }
 }
@@ -1075,7 +1016,7 @@ async function processAgentUserQuery(userText) {
   stopAgentSpeaking();
   document.getElementById('userLiveText').textContent = `"${userText}"`;
   document.getElementById('aiLiveText').textContent = 'Generating spoken response...';
-  setAgentState('thinking', 'Llama 3.3 (70B) is generating response...');
+  setAgentState('thinking', 'Qwen 3.6 (27B) is generating response...');
 
   const langCode = document.getElementById('agentLangSelect').value || 'hi-IN';
   const voice = document.getElementById('agentVoiceSelect').value || 'CR_voice1';
@@ -1101,15 +1042,6 @@ Keep your response short, natural, friendly, and spoken-friendly (1-2 sentences 
     ...agentConversationHistory.filter(m => m.role !== 'system')
   ];
 
-  const llmStartTime = Date.now();
-  logLiveActivity('LLM', `Calling Qwen 3.6 (27B) on Groq LPU`, {
-    endpoint: '/v1/chat/completions',
-    model: 'qwen/qwen3.6-27b',
-    target_language: langCfg.name,
-    user_query: userText,
-    messages_count: messagesToSend.length
-  });
-
   try {
     // Call Qwen 3.6 (27B) on Groq LPU via Portal Gateway
     const llmRes = await fetch('/v1/chat/completions', {
@@ -1126,7 +1058,6 @@ Keep your response short, natural, friendly, and spoken-friendly (1-2 sentences 
       })
     });
 
-    const llmLatency = Date.now() - llmStartTime;
     const llmData = await llmRes.json();
     let replyText = (llmData.message && llmData.message.content) ? llmData.message.content.trim() : '';
 
@@ -1134,26 +1065,11 @@ Keep your response short, natural, friendly, and spoken-friendly (1-2 sentences 
       replyText = langCfg.greeting;
     }
 
-    logLiveActivity('LLM', `Qwen 3.6 generated response in ${llmLatency}ms`, {
-      reply_text: replyText,
-      model: llmData.model || 'qwen/qwen3.6-27b',
-      usage: llmData.usage
-    }, llmLatency);
-
     agentConversationHistory.push({ role: 'assistant', content: replyText });
     document.getElementById('aiLiveText').textContent = `"${replyText}"`;
 
     // Synthesize Speech via CR_voice1 TTS
     setAgentState('speaking', 'Carnot Voice AI is speaking...');
-
-    const ttsStartTime = Date.now();
-    logLiveActivity('TTS', `Synthesizing neural speech with CR_voice1`, {
-      endpoint: '/v1/tts/generate',
-      model: voice,
-      target_language: langCode,
-      text: replyText,
-      sample_rate: 44100
-    });
 
     const ttsRes = await fetch('/v1/tts/generate', {
       method: 'POST',
@@ -1171,23 +1087,15 @@ Keep your response short, natural, friendly, and spoken-friendly (1-2 sentences 
       })
     });
 
-    const ttsLatency = Date.now() - ttsStartTime;
     const ttsData = await ttsRes.json();
     if (ttsData.audio_b64) {
-      logLiveActivity('TTS', `Speech synthesized in ${ttsLatency}ms (Base64 audio ready)`, {
-        request_id: ttsData.request_id,
-        target_language: ttsData.target_language,
-        audio_b64_length: ttsData.audio_b64.length
-      }, ttsLatency);
       playAgentAudio(ttsData.audio_b64);
     } else {
       setAgentState('idle', 'Spoken response complete.');
-      logLiveActivity('TTS', `TTS returned non-audio response`, ttsData, ttsLatency);
     }
   } catch (err) {
     setAgentState('idle', 'Error: ' + err.message);
     document.getElementById('aiLiveText').textContent = 'Error: ' + err.message;
-    logLiveActivity('ERROR', `Pipeline Execution Error: ${err.message}`, { error: err.stack });
   }
 }
 
@@ -1207,10 +1115,10 @@ function setAgentState(state, statusMsg) {
 
   if (btnMic && micIcon) {
     if (state === 'listening') {
-      btnMic.classList.add('listening');
+      btnMic.classList.add('active');
       micIcon.className = 'fa-solid fa-stop';
     } else {
-      btnMic.classList.remove('listening');
+      btnMic.classList.remove('active');
       micIcon.className = 'fa-solid fa-microphone';
     }
   }
@@ -1251,12 +1159,10 @@ async function startAgentListening() {
     };
 
     agentMediaRecorder.start();
-    setAgentState('listening', 'Listening to you... (Tap mic to finish)');
+    setAgentState('listening', 'Listening to you... (Tap to finish)');
     document.getElementById('userLiveText').textContent = '"Listening..."';
-    logLiveActivity('STT', 'Microphone active — streaming audio input', { mimeType: options.mimeType || 'default' });
   } catch (err) {
     console.warn('Microphone permission fallback:', err);
-    logLiveActivity('ERROR', `Microphone access denied: ${err.message}`, { error: err.message });
     // Fallback: Simulate sample query if mic not permitted
     const sampleQuery = prompt('Microphone not available in this browser context. Type your query for Carnot Voice AI:', 'Tell me about Carnot Research AI platform in 2 sentences.');
     if (sampleQuery) {
@@ -1273,19 +1179,9 @@ async function stopAgentListeningAndProcess() {
       setAgentState('thinking', 'Transcribing audio with CR_stt1...');
       document.getElementById('userLiveText').textContent = '"Processing audio..."';
 
-      const sttStartTime = Date.now();
-      const lang = document.getElementById('agentLangSelect').value || 'hi-IN';
-      
-      logLiveActivity('STT', `Sending ${audioBlob.size} bytes audio to CR_stt1`, {
-        endpoint: '/v1/stt/transcribe',
-        model: 'CR_stt1',
-        language_code: lang,
-        audio_size_bytes: audioBlob.size,
-        mime_type: mime
-      });
-
       // Send to STT endpoint
       try {
+        const lang = document.getElementById('agentLangSelect').value || 'hi-IN';
         const formData = new FormData();
         formData.append('model', 'CR_stt1');
         formData.append('language_code', lang);
@@ -1296,15 +1192,8 @@ async function stopAgentListeningAndProcess() {
           headers: { 'Authorization': `Bearer ${activeApiKey}` },
           body: formData
         });
-        const sttLatency = Date.now() - sttStartTime;
         const sttData = await sttRes.json();
         const userText = (sttData.transcript || '').trim();
-
-        logLiveActivity('STT', `CR_stt1 transcribed audio in ${sttLatency}ms`, {
-          transcript: userText,
-          confidence: sttData.confidence,
-          language_resolved: sttData.language
-        }, sttLatency);
 
         if (userText) {
           processAgentUserQuery(userText);
@@ -1534,4 +1423,52 @@ function startOrbAnimation(canvas) {
 
   render();
 }
+
+// ── Activity Logs Viewer Controller ──
+let activeLogFile = 'activity.log';
+
+function initLogsViewer() {
+  const btnRefresh = document.getElementById('btnRefreshLogs');
+  const btnDownload = document.getElementById('btnDownloadLogs');
+  const filterBtns = document.querySelectorAll('.log-filter-btn');
+
+  if (btnRefresh) {
+    btnRefresh.addEventListener('click', () => fetchAndRenderLogs());
+  }
+
+  if (btnDownload) {
+    btnDownload.addEventListener('click', () => {
+      window.open(`/api/logs?file=${activeLogFile}`, '_blank');
+    });
+  }
+
+  filterBtns.forEach(btn => {
+    btn.addEventListener('click', () => {
+      filterBtns.forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      activeLogFile = btn.getAttribute('data-file') || 'activity.log';
+      fetchAndRenderLogs();
+    });
+  });
+}
+
+async function fetchAndRenderLogs() {
+  const codeEl = document.getElementById('terminalLogCode');
+  if (!codeEl) return;
+
+  try {
+    const res = await fetch(`/api/logs?file=${activeLogFile}&lines=150`);
+    if (res.ok) {
+      const text = await res.text();
+      codeEl.textContent = text.trim() ? text : `[${new Date().toISOString()}] No entries yet in ${activeLogFile}. Perform a test query in the playground to inspect live logs.`;
+      const viewer = document.getElementById('terminalLogViewer');
+      if (viewer) viewer.scrollTop = viewer.scrollHeight;
+    } else {
+      codeEl.textContent = `No logs found for ${activeLogFile}.`;
+    }
+  } catch (err) {
+    codeEl.textContent = `Error loading logs: ${err.message}`;
+  }
+}
+
 

@@ -10,6 +10,30 @@ const { spawn } = require('child_process');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// ── Create and Ensure Dedicated Logs Directory ──
+const LOGS_DIR = path.join(__dirname, '..', 'logs');
+if (!fs.existsSync(LOGS_DIR)) {
+  fs.mkdirSync(LOGS_DIR, { recursive: true });
+}
+
+// ── Exhaustive File Logging Utility ──
+function writeLog(service, event, details = {}) {
+  const timestamp = new Date().toISOString().replace('T', ' ').substring(0, 19);
+  const detailsStr = typeof details === 'object' ? JSON.stringify(details) : String(details);
+  const logLine = `[${timestamp}] [${service.toUpperCase()}] [${event}] ${detailsStr}\n`;
+  
+  // 1. Console Output with ANSI formatting
+  console.log(`[${timestamp}] [${service.toUpperCase()}] [${event}]`, details);
+
+  // 2. Append to general activity.log and service-specific logs
+  try {
+    fs.appendFileSync(path.join(LOGS_DIR, 'activity.log'), logLine);
+    fs.appendFileSync(path.join(LOGS_DIR, `${service.toLowerCase()}.log`), logLine);
+  } catch (err) {
+    console.error('Failed to write log file:', err);
+  }
+}
+
 // Setup file upload handling (memory storage for low latency)
 const storage = multer.memoryStorage();
 const upload = multer({ storage: storage, limits: { fileSize: 25 * 1024 * 1024 } });
@@ -60,6 +84,7 @@ function authenticateKey(req, res, next) {
     return next();
   }
 
+  writeLog('AUTH', 'UNAUTHORIZED', { path: req.path, ip: req.ip, provided_token: token });
   return res.status(401).json({ error: 'Unauthorized: Invalid or missing API Key' });
 }
 
@@ -110,6 +135,7 @@ app.post('/api/keys/create', (req, res) => {
   };
   apiKeys.push(newKey);
   saveApiKeys(apiKeys);
+  writeLog('KEYS', 'KEY_CREATED', { name: newKey.name, key: newKey.key });
   res.json(newKey);
 });
 
@@ -117,6 +143,7 @@ app.post('/api/keys/revoke', (req, res) => {
   const { key } = req.body;
   apiKeys = apiKeys.filter(k => k.key !== key);
   saveApiKeys(apiKeys);
+  writeLog('KEYS', 'KEY_REVOKED', { key: key });
   res.json({ status: 'revoked', key });
 });
 
@@ -124,12 +151,16 @@ app.post('/api/keys/revoke', (req, res) => {
 app.post('/v1/tts/generate', authenticateKey, (req, res) => {
   const { text, target_language, voice, pace, sample_rate } = req.body;
 
-  console.log(`\n🔊 [TTS REQUEST] [${new Date().toISOString()}]`);
-  console.log(`   ├─ Model: ${voice || 'default'}`);
-  console.log(`   ├─ Language: ${target_language || 'hi-IN'}`);
-  console.log(`   └─ Text: "${text}"`);
+  writeLog('TTS', 'REQUEST', {
+    model: voice || 'CR_voice1',
+    target_language: target_language || 'hi-IN',
+    text_length: text ? text.length : 0,
+    text: text,
+    sample_rate: sample_rate || 44100
+  });
 
   if (!text) {
+    writeLog('TTS', 'ERROR', { error: 'Missing required field: text' });
     return res.status(400).json({ error: 'Missing required field: text' });
   }
 
@@ -154,13 +185,14 @@ app.post('/v1/tts/generate', authenticateKey, (req, res) => {
         const latencyMs = Date.now() - startTime;
         ws.close();
         const audioLen = (msg.audio_b64 || msg.audio || '').length;
-        console.log(`🔊 [TTS RESPONSE] Synthesized in ${latencyMs}ms | Audio payload: ${audioLen} base64 chars`);
-        addServerLog('TTS', `Synthesized ${text.length} chars to ${target_language}`, {
-          model: voice || 'CR_voice1',
-          language: target_language,
+
+        writeLog('TTS', 'RESPONSE', {
           latency_ms: latencyMs,
-          text: text
+          audio_b64_chars: audioLen,
+          target_language: target_language || 'hi-IN',
+          status: 'success'
         });
+
         return res.json({
           status: 'success',
           request_id: msg.request_id || ('req_' + Date.now()),
@@ -172,18 +204,16 @@ app.post('/v1/tts/generate', authenticateKey, (req, res) => {
         });
       } else if (msg.type === 'error') {
         ws.close();
-        console.error(`❌ [TTS ERROR] ${msg.message}`);
-        addServerLog('ERROR', `TTS Error: ${msg.message}`, { service: 'TTS' });
+        writeLog('TTS', 'ERROR', { error: msg.message });
         return res.status(500).json({ error: msg.message || 'TTS Synthesis failed' });
       }
     } catch (e) {
-      // ignore
+      writeLog('TTS', 'PARSE_ERROR', { error: e.message });
     }
   });
 
   ws.on('error', (err) => {
-    console.error(`❌ [TTS WS ERROR] ${err.message}`);
-    addServerLog('ERROR', `TTS WebSocket Error: ${err.message}`, { service: 'TTS' });
+    writeLog('TTS', 'SOCKET_ERROR', { error: err.message });
     res.status(500).json({ error: 'Failed to connect to local TTS engine: ' + err.message });
   });
 });
@@ -199,12 +229,14 @@ app.post('/v1/stt/transcribe', authenticateKey, upload.single('file'), async (re
     rawAudioBuffer = Buffer.from(req.body.audio_b64, 'base64');
   }
 
-  console.log(`\n🎙️ [STT REQUEST] [${new Date().toISOString()}]`);
-  console.log(`   ├─ Model: ${req.body.model || 'CR_stt1'}`);
-  console.log(`   ├─ Language Code: ${language_code}`);
-  console.log(`   └─ Audio Payload Size: ${rawAudioBuffer ? rawAudioBuffer.length : 0} bytes`);
+  writeLog('STT', 'REQUEST', {
+    model: req.body.model || 'CR_stt1',
+    language_code: language_code,
+    audio_bytes: rawAudioBuffer ? rawAudioBuffer.length : 0
+  });
 
   if (!rawAudioBuffer) {
+    writeLog('STT', 'ERROR', { error: 'Audio file or audio_b64 is required' });
     return res.status(400).json({ error: 'Audio file or audio_b64 is required' });
   }
 
@@ -234,13 +266,14 @@ app.post('/v1/stt/transcribe', authenticateKey, upload.single('file'), async (re
       if (msg.type === 'final') {
         const latencyMs = Date.now() - startTime;
         ws.close();
-        console.log(`🎙️ [STT RESPONSE] Transcribed in ${latencyMs}ms -> "${msg.text}" (conf: ${msg.confidence || 1.0})`);
-        addServerLog('STT', `Transcribed audio (${audioBuffer.length} bytes) -> "${msg.text}"`, {
-          model: 'CR_stt1',
+
+        writeLog('STT', 'RESPONSE', {
+          latency_ms: latencyMs,
+          transcript: msg.text || '',
           language: msg.lang || language_code,
-          confidence: msg.confidence,
-          latency_ms: latencyMs
+          confidence: msg.confidence || 1.0
         });
+
         return res.json({
           status: 'success',
           transcript: msg.text || '',
@@ -250,18 +283,16 @@ app.post('/v1/stt/transcribe', authenticateKey, upload.single('file'), async (re
         });
       } else if (msg.type === 'error') {
         ws.close();
-        console.error(`❌ [STT ERROR] ${msg.message}`);
-        addServerLog('ERROR', `STT Error: ${msg.message}`, { service: 'STT' });
+        writeLog('STT', 'ERROR', { error: msg.message });
         return res.status(500).json({ error: msg.message || 'STT Transcription failed' });
       }
     } catch (e) {
-      // ignore
+      writeLog('STT', 'PARSE_ERROR', { error: e.message });
     }
   });
 
   ws.on('error', (err) => {
-    console.error(`❌ [STT WS ERROR] ${err.message}`);
-    addServerLog('ERROR', `STT WebSocket Error: ${err.message}`, { service: 'STT' });
+    writeLog('STT', 'SOCKET_ERROR', { error: err.message });
     res.status(500).json({ error: 'Failed to connect to local STT engine: ' + err.message });
   });
 });
@@ -270,6 +301,7 @@ app.post('/v1/stt/transcribe', authenticateKey, upload.single('file'), async (re
 app.post('/v1/translate', authenticateKey, async (req, res) => {
   const { text, source_language, target_language } = req.body;
   if (!text) {
+    writeLog('TRANSLATE', 'ERROR', { error: 'Missing required field: text' });
     return res.status(400).json({ error: 'Missing required field: text' });
   }
 
@@ -277,9 +309,11 @@ app.post('/v1/translate', authenticateKey, async (req, res) => {
   const tgtLang = target_language || 'Hindi';
   const startTime = Date.now();
 
-  console.log(`\n🌐 [TRANSLATE REQUEST] [${new Date().toISOString()}]`);
-  console.log(`   ├─ Source: ${srcLang} ──► Target: ${tgtLang}`);
-  console.log(`   └─ Text: "${text}"`);
+  writeLog('TRANSLATE', 'REQUEST', {
+    source_language: srcLang,
+    target_language: tgtLang,
+    text: text
+  });
 
   try {
     let targetUrl = 'http://127.0.0.1:8000/translate';
@@ -303,13 +337,11 @@ app.post('/v1/translate', authenticateKey, async (req, res) => {
     const latencyMs = Date.now() - startTime;
     const translatedText = data.translated || data.translated_text || text;
 
-    console.log(`🌐 [TRANSLATE RESPONSE] in ${latencyMs}ms ──► "${translatedText}"`);
-    addServerLog('TRANSLATE', `Translated ${srcLang} ──► ${tgtLang}`, {
-      source: srcLang,
-      target: tgtLang,
-      original: text,
-      translated: translatedText,
-      latency_ms: latencyMs
+    writeLog('TRANSLATE', 'RESPONSE', {
+      latency_ms: latencyMs,
+      source_language: srcLang,
+      target_language: tgtLang,
+      translated_text: translatedText
     });
 
     return res.json({
@@ -321,8 +353,7 @@ app.post('/v1/translate', authenticateKey, async (req, res) => {
       latency_ms: latencyMs
     });
   } catch (err) {
-    console.error(`❌ [TRANSLATE ERROR] ${err.message}`);
-    addServerLog('ERROR', `Translation Error: ${err.message}`, { service: 'TRANSLATE' });
+    writeLog('TRANSLATE', 'ERROR', { error: err.message });
     return res.status(500).json({ error: 'Translation backend error: ' + err.message });
   }
 });
@@ -335,7 +366,7 @@ app.post('/v1/chat/completions', authenticateKey, async (req, res) => {
 
     const groqUrl = process.env.GROQ_API_URL || 'https://api.groq.com/openai/v1/chat/completions';
     const apiKey = process.env.GROQ_API_KEY;
-    const targetModel = process.env.GROQ_MODEL || 'llama-3.3-70b-versatile';
+    const targetModel = process.env.GROQ_MODEL || 'qwen/qwen3.6-27b';
 
     // Format messages for Groq API
     const rawMessages = messages || [{ role: 'user', content: req.body.prompt || 'Hello' }];
@@ -344,19 +375,18 @@ app.post('/v1/chat/completions', authenticateKey, async (req, res) => {
       content: typeof m.content === 'string' ? m.content : (Array.isArray(m.content) ? (m.content[0]?.text || JSON.stringify(m.content)) : JSON.stringify(m.content))
     }));
 
-    console.log(`\n🧠 [LLM REQUEST] [${new Date().toISOString()}]`);
-    console.log(`   ├─ Model: ${targetModel} (Provider: Groq LPU)`);
-    console.log(`   ├─ Temperature: ${temperature}, Max Tokens: ${max_tokens}`);
-    console.log(`   └─ Message History (${formattedMessages.length} turns):`);
-    formattedMessages.forEach((m, idx) => {
-      console.log(`      [${idx}] ${m.role.toUpperCase()}: "${(m.content || '').substring(0, 80)}"`);
+    writeLog('LLM', 'REQUEST', {
+      model: targetModel,
+      provider: 'Groq LPU',
+      messages_count: formattedMessages.length,
+      messages: formattedMessages
     });
 
     const groqPayload = {
       model: targetModel,
       messages: formattedMessages,
       temperature: temperature,
-      max_completion_tokens: Math.max(max_tokens, 2048),
+      max_completion_tokens: max_tokens,
       stream: false
     };
 
@@ -372,8 +402,7 @@ app.post('/v1/chat/completions', authenticateKey, async (req, res) => {
 
     if (!response.ok) {
       const errText = await response.text();
-      console.error(`❌ [GROQ API ERROR ${response.status}] ${errText}`);
-      addServerLog('ERROR', `Groq API Error ${response.status}`, { error: errText });
+      writeLog('LLM', 'ERROR', { status: response.status, error: errText });
       throw new Error(`Groq API error ${response.status}: ${errText}`);
     }
 
@@ -385,54 +414,50 @@ app.post('/v1/chat/completions', authenticateKey, async (req, res) => {
       replyContent = data.message.content;
     }
 
-    // Robustly extract the spoken response after </think> if reasoning was returned
-    if (replyContent.includes('</think>')) {
-      replyContent = replyContent.split('</think>')[1].trim();
-    } else {
-      replyContent = replyContent.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
-    }
-
+    // Strip out <think>...</think> reasoning tags so only clean spoken response is sent
+    const rawReply = replyContent;
+    replyContent = replyContent.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
     const latencyMs = Date.now() - startTime;
 
-    console.log(`🧠 [LLM RESPONSE] in ${latencyMs}ms | Tokens: ${data.usage ? JSON.stringify(data.usage) : 'N/A'}`);
-    console.log(`   └─ Reply: "${replyContent}"`);
-
-    addServerLog('LLM', `Generated response with ${targetModel} in ${latencyMs}ms`, {
+    writeLog('LLM', 'RESPONSE', {
       model: targetModel,
       latency_ms: latencyMs,
       reply_text: replyContent,
-      usage: data.usage
+      usage: data.usage || null
     });
 
     return res.json({
       model: targetModel,
       message: { role: 'assistant', content: replyContent },
       done: true,
-      usage: data.usage || null
+      usage: data.usage || null,
+      latency_ms: latencyMs
     });
   } catch (err) {
-    console.error('❌ [LLM GENERATION ERROR]:', err);
-    addServerLog('ERROR', `LLM Generation Error: ${err.message}`, { service: 'LLM' });
+    writeLog('LLM', 'ERROR', { error: err.message });
     return res.status(500).json({ error: 'LLM generation error: ' + err.message });
   }
 });
 
-// ── In-Memory Log Store & Logs API ──
-const serverLogBuffer = [];
-function addServerLog(type, message, details) {
-  const entry = {
-    id: Date.now() + '_' + Math.random().toString(36).substring(2, 6),
-    timestamp: new Date().toISOString(),
-    type,
-    message,
-    details
-  };
-  serverLogBuffer.unshift(entry);
-  if (serverLogBuffer.length > 200) serverLogBuffer.pop();
-}
-
+// ── Raw Log Viewing & API Inspection Endpoint ──
 app.get('/api/logs', (req, res) => {
-  res.json(serverLogBuffer);
+  const file = req.query.file || 'activity.log';
+  const safeName = path.basename(file);
+  const targetPath = path.join(LOGS_DIR, safeName);
+  
+  if (fs.existsSync(targetPath)) {
+    const linesCount = parseInt(req.query.lines) || 100;
+    const content = fs.readFileSync(targetPath, 'utf8');
+    const lines = content.split('\n').filter(l => l.trim().length > 0).slice(-linesCount);
+    
+    if (req.query.format === 'json') {
+      return res.json({ file: safeName, lines_count: lines.length, logs: lines });
+    }
+
+    res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+    return res.send(lines.join('\n'));
+  }
+  return res.status(404).send('Log file not found: ' + safeName);
 });
 
 // ── Hardware Telemetry & System Status Endpoint ──
@@ -451,12 +476,12 @@ app.get('/api/status', (req, res) => {
       { name: 'Speech-to-Text (STT)', port: 8091, status: 'active', model: 'CR_stt1' },
       { name: 'Text-to-Speech (TTS)', port: 8092, status: 'active', model: 'CR_voice1' },
       { name: 'Translation NMT', port: 8000, status: 'active', model: 'CR_trans' },
-      { name: 'Conversational LLM', port: 443, status: 'active', model: 'Llama 3.3 (70B) [Groq LPU]' }
+      { name: 'Conversational LLM', port: 443, status: 'active', model: 'Qwen 3.6 (27B) [Groq LPU]' }
     ]
   });
 });
 
 app.listen(PORT, () => {
   console.log(`Carnot Research Developer Portal Gateway running on http://127.0.0.1:${PORT}`);
+  writeLog('SYSTEM', 'GATEWAY_START', { port: PORT, env: process.env.NODE_ENV || 'production' });
 });
-
