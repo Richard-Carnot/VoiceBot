@@ -386,7 +386,7 @@ app.post('/v1/chat/completions', authenticateKey, async (req, res) => {
       model: targetModel,
       messages: formattedMessages,
       temperature: temperature,
-      max_completion_tokens: max_tokens,
+      max_completion_tokens: Math.max(max_tokens, 2048),
       stream: false
     };
 
@@ -414,9 +414,13 @@ app.post('/v1/chat/completions', authenticateKey, async (req, res) => {
       replyContent = data.message.content;
     }
 
-    // Strip out <think>...</think> reasoning tags so only clean spoken response is sent
-    const rawReply = replyContent;
-    replyContent = replyContent.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+    // Robust reasoning extraction: extract final spoken answer after </think>
+    if (replyContent.includes('</think>')) {
+      replyContent = replyContent.split('</think>')[1].trim();
+    } else {
+      replyContent = replyContent.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+    }
+
     const latencyMs = Date.now() - startTime;
 
     writeLog('LLM', 'RESPONSE', {
