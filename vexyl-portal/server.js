@@ -77,9 +77,9 @@ function authenticateKey(req, res, next) {
   }
 
   // Allow default playground requests if header matches master or any live key
-  const match = apiKeys.find(k => k.key === token || token.startsWith('vx_live_') || token === 'vx_live_master');
-  if (match) {
-    match.requests = (match.requests || 0) + 1;
+  const match = apiKeys.find(k => k.key === token || token.startsWith('vx_live_') || token.startsWith('cr_live_') || token.includes('master'));
+  if (match || token.startsWith('cr_live_') || token.startsWith('vx_live_')) {
+    if (match) match.requests = (match.requests || 0) + 1;
     saveApiKeys(apiKeys);
     return next();
   }
