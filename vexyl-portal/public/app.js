@@ -1075,7 +1075,7 @@ async function processAgentUserQuery(userText) {
   stopAgentSpeaking();
   document.getElementById('userLiveText').textContent = `"${userText}"`;
   document.getElementById('aiLiveText').textContent = 'Generating spoken response...';
-  setAgentState('thinking', 'Qwen 3.6 (27B) is generating response...');
+  setAgentState('thinking', 'Llama 3.3 (70B) is generating response...');
 
   const langCode = document.getElementById('agentLangSelect').value || 'hi-IN';
   const voice = document.getElementById('agentVoiceSelect').value || 'CR_voice1';
