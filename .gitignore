@@ -31,3 +31,9 @@ __pycache__/
 *.pt
 *.pth
 *.safetensors
+
+# Environment files & Secrets
+.env
+.env.*
+*.env
+api_keys.json

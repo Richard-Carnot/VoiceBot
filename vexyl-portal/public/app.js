@@ -1012,7 +1012,7 @@ async function processAgentUserQuery(userText) {
   stopAgentSpeaking();
   document.getElementById('userLiveText').textContent = `"${userText}"`;
   document.getElementById('aiLiveText').textContent = 'Generating spoken response...';
-  setAgentState('thinking', 'Qwen 3.5 is generating spoken response...');
+  setAgentState('thinking', 'C-DOT Gemma 4 (12B) is generating response...');
 
   const langCode = document.getElementById('agentLangSelect').value || 'hi-IN';
   const voice = document.getElementById('agentVoiceSelect').value || 'CR_voice1';
@@ -1039,23 +1039,65 @@ Keep your response short, natural, friendly, and spoken-friendly (1-2 sentences 
   ];
 
   try {
-    // Call LLM Chat Completions (Qwen 3.5)
-    const llmRes = await fetch('/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${activeApiKey}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        model: 'qwen3.5:7b',
-        messages: messagesToSend,
-        temperature: 0.6,
-        max_tokens: 200
-      })
-    });
+    // Call C-DOT Gemma 4 (12B) on AIRAWAT
+    let replyText = '';
+    
+    // Format messages for C-DOT Gemma API
+    const formattedMessages = messagesToSend.map(m => ({
+      role: m.role,
+      content: [
+        {
+          type: 'text',
+          text: typeof m.content === 'string' ? m.content : JSON.stringify(m.content)
+        }
+      ]
+    }));
 
-    const llmData = await llmRes.json();
-    let replyText = (llmData.message && llmData.message.content) ? llmData.message.content.trim() : '';
+    try {
+      // Direct client-side fetch to AIRAWAT
+      const directRes = await fetch('https://apis.airawat.cdac.in/cdot-gemma4-12b/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer eyJ0eXAVlMQ',
+          'Cookie': 'SERVERID=api-manager'
+        },
+        body: JSON.stringify({
+          messages: formattedMessages,
+          stream: false,
+          temperature: 0.5,
+          max_tokens: 250
+        })
+      });
+
+      if (directRes.ok) {
+        const directData = await directRes.json();
+        if (directData.choices && directData.choices[0] && directData.choices[0].message) {
+          replyText = (directData.choices[0].message.content || '').trim();
+        }
+      }
+    } catch (e) {
+      console.warn('Direct AIRAWAT connection failed, trying portal gateway proxy...', e);
+    }
+
+    // Gateway fallback if direct browser fetch didn't return
+    if (!replyText) {
+      const llmRes = await fetch('/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${activeApiKey}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          model: 'cdot-gemma4-12b',
+          messages: messagesToSend,
+          temperature: 0.5,
+          max_tokens: 250
+        })
+      });
+      const llmData = await llmRes.json();
+      replyText = (llmData.message && llmData.message.content) ? llmData.message.content.trim() : '';
+    }
 
     if (!replyText) {
       replyText = langCfg.greeting;
