@@ -929,12 +929,17 @@ let agentAudioContext = null;
 let agentAnalyser = null;
 let agentDataArray = null;
 let agentCurrentAudio = null;
-let agentConversationHistory = [
-  {
-    role: 'system',
-    content: 'You are Carnot Voice AI, an intelligent, conversational, real-time voice agent. Always keep responses natural, friendly, spoken-friendly, and concise (1-3 sentences maximum) so they sound great when spoken out loud.'
-  }
-];
+const langConfigMap = {
+  'en-IN': { name: 'English', script: 'English alphabet', greeting: 'Hello! I am Carnot Voice AI. How can I assist you today?' },
+  'hi-IN': { name: 'Hindi', script: 'Devanagari script (हिन्दी)', greeting: 'नमस्ते! मैं Carnot Voice AI हूँ। मैं आज आपकी क्या सहायता कर सकता हूँ?' },
+  'ta-IN': { name: 'Tamil', script: 'Tamil script (தமிழ்)', greeting: 'வணக்கம்! நான் Carnot Voice AI. உங்களுக்கு எப்படி உதவ முடியும்?' },
+  'te-IN': { name: 'Telugu', script: 'Telugu script (తెలుగు)', greeting: 'నమస్కారం! నేను Carnot Voice AI. ఈరోజు నేను మీకు ఎలా సహాయపడగలను?' },
+  'ml-IN': { name: 'Malayalam', script: 'Malayalam script (മലയാളം)', greeting: 'നമസ്കാരം! ഞാൻ Carnot Voice AI ആണ്. ഇന്ന് ഞാൻ നിങ്ങളെ എങ്ങനെ സഹായിക്കണം?' },
+  'bn-IN': { name: 'Bengali', script: 'Bengali script (বাংলা)', greeting: 'নমস্কার! আমি Carnot Voice AI। আজ আমি আপনাকে কীভাবে সাহায্য করতে পারি?' },
+  'mr-IN': { name: 'Marathi', script: 'Devanagari script (मराठी)', greeting: 'नमस्कार! मी Carnot Voice AI आहे. आज मी तुम्हाला कशी मदत करू शकतो?' },
+  'gu-IN': { name: 'Gujarati', script: 'Gujarati script (ગુજરાતી)', greeting: 'નમસ્તે! હું Carnot Voice AI છું. આજે હું તમને કેવી રીતે મદદ કરી શકું?' },
+  'kn-IN': { name: 'Kannada', script: 'Kannada script (ಕನ್ನಡ)', greeting: 'ನಮಸ್ಕಾರ! ನಾನು Carnot Voice AI. ಇಂದು ನಾನು ನಿಮಗೆ ಹೇಗೆ ಸಹಾಯ ಮಾಡಬಹುದು?' }
+};
 
 function initVoiceAgent() {
   const canvas = document.getElementById('voiceOrbCanvas');
@@ -944,9 +949,19 @@ function initVoiceAgent() {
   const btnSendText = document.getElementById('btnAgentSendText');
   const textInput = document.getElementById('agentTextInput');
   const btnReset = document.getElementById('btnAgentReset');
+  const langSelect = document.getElementById('agentLangSelect');
 
   // Start animated fluid glowing orb canvas loop
   startOrbAnimation(canvas);
+
+  if (langSelect) {
+    langSelect.addEventListener('change', () => {
+      const selected = langSelect.value;
+      const cfg = langConfigMap[selected] || langConfigMap['hi-IN'];
+      document.getElementById('aiLiveText').textContent = `"${cfg.greeting}"`;
+      setAgentState('idle', `Language switched to ${cfg.name}. Tap mic to talk.`);
+    });
+  }
 
   if (btnMicToggle) {
     btnMicToggle.addEventListener('click', () => {
@@ -983,16 +998,94 @@ function initVoiceAgent() {
   if (btnReset) {
     btnReset.addEventListener('click', () => {
       stopAgentSpeaking();
-      agentConversationHistory = [
-        {
-          role: 'system',
-          content: 'You are Carnot Voice AI, an intelligent, conversational, real-time voice agent. Always keep responses natural, friendly, spoken-friendly, and concise (1-3 sentences maximum).'
-        }
-      ];
+      const selected = (langSelect ? langSelect.value : 'hi-IN');
+      const cfg = langConfigMap[selected] || langConfigMap['hi-IN'];
+      agentConversationHistory = [];
       setAgentState('idle', 'Conversation reset. Tap mic to talk.');
       document.getElementById('userLiveText').textContent = '"Speak to start conversational voice agent..."';
-      document.getElementById('aiLiveText').textContent = '"Conversation cleared. How can I help you next?"';
+      document.getElementById('aiLiveText').textContent = `"${cfg.greeting}"`;
     });
+  }
+}
+
+async function processAgentUserQuery(userText) {
+  stopAgentSpeaking();
+  document.getElementById('userLiveText').textContent = `"${userText}"`;
+  document.getElementById('aiLiveText').textContent = 'Generating spoken response...';
+  setAgentState('thinking', 'Qwen 3.5 is generating spoken response...');
+
+  const langCode = document.getElementById('agentLangSelect').value || 'hi-IN';
+  const voice = document.getElementById('agentVoiceSelect').value || 'CR_voice1';
+  const langCfg = langConfigMap[langCode] || { name: 'Tamil', script: 'Tamil script (தமிழ்)' };
+
+  // Strict language system prompt
+  const systemInstruction = `You are Carnot Voice AI, an intelligent, conversational, real-time voice assistant.
+CRITICAL LANGUAGE RULE: The user is communicating in ${langCfg.name}.
+You MUST ALWAYS respond EXCLUSIVELY in ${langCfg.name} using native ${langCfg.script}.
+DO NOT use Chinese, English, or any other language characters.
+Keep your response short, natural, friendly, and spoken-friendly (1-2 sentences maximum) so it sounds smooth when spoken aloud.`;
+
+  agentConversationHistory.push({ role: 'user', content: userText });
+
+  const messagesToSend = [
+    { role: 'system', content: systemInstruction },
+    ...agentConversationHistory.filter(m => m.role !== 'system')
+  ];
+
+  try {
+    // Call LLM Chat Completions (Qwen 3.5)
+    const llmRes = await fetch('/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${activeApiKey}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        model: 'qwen3.5:7b',
+        messages: messagesToSend,
+        temperature: 0.6,
+        max_tokens: 200
+      })
+    });
+
+    const llmData = await llmRes.json();
+    let replyText = (llmData.message && llmData.message.content) ? llmData.message.content.trim() : '';
+
+    if (!replyText) {
+      replyText = langCfg.greeting;
+    }
+
+    agentConversationHistory.push({ role: 'assistant', content: replyText });
+    document.getElementById('aiLiveText').textContent = `"${replyText}"`;
+
+    // Synthesize Speech via CR_voice1 TTS
+    setAgentState('speaking', 'Carnot Voice AI is speaking...');
+
+    const ttsRes = await fetch('/v1/tts/generate', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${activeApiKey}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        text: replyText,
+        model: voice,
+        target_language: langCode,
+        voice: 'default',
+        pace: 1.0,
+        sample_rate: 44100
+      })
+    });
+
+    const ttsData = await ttsRes.json();
+    if (ttsData.audio_b64) {
+      playAgentAudio(ttsData.audio_b64);
+    } else {
+      setAgentState('idle', 'Speech synthesis complete (Text-only)');
+    }
+  } catch (err) {
+    setAgentState('idle', 'Error: ' + err.message);
+    document.getElementById('aiLiveText').textContent = 'Error: ' + err.message;
   }
 }
 
