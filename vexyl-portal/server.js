@@ -358,17 +358,14 @@ app.post('/v1/translate', authenticateKey, async (req, res) => {
   }
 });
 
-// ── LLM Chat Completion Endpoint (Qwen 3.6 27B via Groq LPU) ──
+// ── LLM Chat Completion Endpoint (Local Qwen 3 8B on NVIDIA L4 GPU) ──
 app.post('/v1/chat/completions', authenticateKey, async (req, res) => {
   const startTime = Date.now();
   try {
     const { messages, temperature = 0.6, max_tokens = 512 } = req.body;
+    const targetModel = req.body.model || process.env.LOCAL_LLM_MODEL || 'qwen3:8b';
 
-    const groqUrl = process.env.GROQ_API_URL || 'https://api.groq.com/openai/v1/chat/completions';
-    const apiKey = process.env.GROQ_API_KEY;
-    const targetModel = process.env.GROQ_MODEL || 'qwen/qwen3.6-27b';
-
-    // Format messages for Groq API
+    // Format messages for standard completion
     const rawMessages = messages || [{ role: 'user', content: req.body.prompt || 'Hello' }];
     const formattedMessages = rawMessages.map(m => ({
       role: m.role,
@@ -377,44 +374,37 @@ app.post('/v1/chat/completions', authenticateKey, async (req, res) => {
 
     writeLog('LLM', 'REQUEST', {
       model: targetModel,
-      provider: 'Groq LPU',
+      provider: 'Local Ollama (NVIDIA L4 GPU)',
       messages_count: formattedMessages.length,
       messages: formattedMessages
     });
 
-    const groqPayload = {
-      model: targetModel,
-      messages: formattedMessages,
-      temperature: temperature,
-      max_completion_tokens: Math.max(max_tokens, 2048),
-      stream: false
-    };
-
-    const response = await fetch(groqUrl, {
+    // Call Local Ollama Engine on Port 11434
+    const ollamaResponse = await fetch('http://127.0.0.1:11434/api/chat', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`
-      },
-      body: JSON.stringify(groqPayload),
-      signal: AbortSignal.timeout(15000)
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: targetModel,
+        messages: formattedMessages,
+        options: {
+          temperature: temperature,
+          num_predict: max_tokens
+        },
+        stream: false
+      }),
+      signal: AbortSignal.timeout(10000)
     });
 
-    if (!response.ok) {
-      const errText = await response.text();
-      writeLog('LLM', 'ERROR', { status: response.status, error: errText });
-      throw new Error(`Groq API error ${response.status}: ${errText}`);
+    if (!ollamaResponse.ok) {
+      const errText = await ollamaResponse.text();
+      writeLog('LLM', 'ERROR', { status: ollamaResponse.status, error: errText });
+      throw new Error(`Local Ollama error ${ollamaResponse.status}: ${errText}`);
     }
 
-    const data = await response.json();
-    let replyContent = '';
-    if (data.choices && data.choices[0] && data.choices[0].message) {
-      replyContent = data.choices[0].message.content || '';
-    } else if (data.message && data.message.content) {
-      replyContent = data.message.content;
-    }
+    const data = await ollamaResponse.json();
+    let replyContent = data.message ? data.message.content : '';
 
-    // Robust reasoning extraction: extract final spoken answer after </think>
+    // Strip out <think>...</think> if present
     if (replyContent.includes('</think>')) {
       replyContent = replyContent.split('</think>')[1].trim();
     } else {
@@ -427,14 +417,14 @@ app.post('/v1/chat/completions', authenticateKey, async (req, res) => {
       model: targetModel,
       latency_ms: latencyMs,
       reply_text: replyContent,
-      usage: data.usage || null
+      eval_count: data.eval_count,
+      eval_duration_ms: data.eval_duration ? Math.round(data.eval_duration / 1e6) : null
     });
 
     return res.json({
       model: targetModel,
       message: { role: 'assistant', content: replyContent },
       done: true,
-      usage: data.usage || null,
       latency_ms: latencyMs
     });
   } catch (err) {
@@ -472,15 +462,15 @@ app.get('/api/status', (req, res) => {
       model: 'NVIDIA L4 (24GB VRAM)',
       driver: '550.163.01',
       cuda: '12.4',
-      vram_allocated_mb: 10500,
+      vram_allocated_mb: 14700,
       vram_total_mb: 23040,
-      utilization_pct: 28
+      utilization_pct: 22
     },
     services: [
       { name: 'Speech-to-Text (STT)', port: 8091, status: 'active', model: 'CR_stt1' },
       { name: 'Text-to-Speech (TTS)', port: 8092, status: 'active', model: 'CR_voice1' },
       { name: 'Translation NMT', port: 8000, status: 'active', model: 'CR_trans' },
-      { name: 'Conversational LLM', port: 443, status: 'active', model: 'Qwen 3.6 (27B) [Groq LPU]' }
+      { name: 'Conversational LLM', port: 11434, status: 'active', model: 'Qwen 3 (8B) [Local L4 GPU]' }
     ]
   });
 });

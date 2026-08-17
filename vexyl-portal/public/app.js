@@ -1016,7 +1016,7 @@ async function processAgentUserQuery(userText) {
   stopAgentSpeaking();
   document.getElementById('userLiveText').textContent = `"${userText}"`;
   document.getElementById('aiLiveText').textContent = 'Generating spoken response...';
-  setAgentState('thinking', 'Llama 3.3 (70B) is generating response...');
+  setAgentState('thinking', 'Qwen 3 (8B) is generating response on GPU...');
 
   const langCode = document.getElementById('agentLangSelect').value || 'hi-IN';
   const voice = document.getElementById('agentVoiceSelect').value || 'CR_voice1';
@@ -1043,7 +1043,7 @@ Keep your response short, natural, friendly, and spoken-friendly (1-2 sentences 
   ];
 
   try {
-    // Call Llama 3.3 (70B) on Groq LPU via Portal Gateway
+    // Call Qwen 3 (8B) running locally on NVIDIA L4 GPU via Portal Gateway
     const llmRes = await fetch('/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -1051,10 +1051,10 @@ Keep your response short, natural, friendly, and spoken-friendly (1-2 sentences 
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        model: 'llama-3.3-70b-versatile',
+        model: 'qwen3:8b',
         messages: messagesToSend,
         temperature: 0.6,
-        max_tokens: 250
+        max_tokens: 200
       })
     });
 
