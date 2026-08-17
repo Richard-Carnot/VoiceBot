@@ -1012,7 +1012,7 @@ async function processAgentUserQuery(userText) {
   stopAgentSpeaking();
   document.getElementById('userLiveText').textContent = `"${userText}"`;
   document.getElementById('aiLiveText').textContent = 'Generating spoken response...';
-  setAgentState('thinking', 'C-DOT Gemma 4 (12B) is generating response...');
+  setAgentState('thinking', 'Qwen 3.6 (27B) is generating response...');
 
   const langCode = document.getElementById('agentLangSelect').value || 'hi-IN';
   const voice = document.getElementById('agentVoiceSelect').value || 'CR_voice1';
@@ -1021,11 +1021,11 @@ async function processAgentUserQuery(userText) {
   // Dynamic language prompt instruction
   let systemInstruction = '';
   if (langCode === 'en-IN') {
-    systemInstruction = `You are Carnot Voice AI, an intelligent, conversational, real-time voice assistant.
+    systemInstruction = `You are Carnot Voice AI, an ultra-fast, intelligent voice assistant.
 The user is speaking in English. You MUST respond ONLY in natural, fluent, spoken English.
-Keep your response short, friendly, and conversational (1-2 sentences maximum) so it sounds natural when spoken aloud.`;
+Keep your response short, friendly, and conversational (1-2 sentences maximum) so it sounds smooth when spoken aloud.`;
   } else {
-    systemInstruction = `You are Carnot Voice AI, an intelligent, conversational, real-time voice assistant.
+    systemInstruction = `You are Carnot Voice AI, an ultra-fast, intelligent voice assistant.
 The user is communicating in ${langCfg.name}. You MUST ALWAYS respond EXCLUSIVELY in ${langCfg.name} using native ${langCfg.script}.
 DO NOT use Chinese, English, or any other foreign script.
 Keep your response short, natural, friendly, and spoken-friendly (1-2 sentences maximum) so it sounds smooth when spoken aloud.`;
@@ -1039,66 +1039,23 @@ Keep your response short, natural, friendly, and spoken-friendly (1-2 sentences 
   ];
 
   try {
-    // Call C-DOT Gemma 4 (12B) on AIRAWAT
-    let replyText = '';
-    
-    // Format messages for C-DOT Gemma API
-    const formattedMessages = messagesToSend.map(m => ({
-      role: m.role,
-      content: [
-        {
-          type: 'text',
-          text: typeof m.content === 'string' ? m.content : JSON.stringify(m.content)
-        }
-      ]
-    }));
+    // Call Qwen 3.6 (27B) on Groq LPU via Portal Gateway
+    const llmRes = await fetch('/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${activeApiKey}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        model: 'qwen/qwen3.6-27b',
+        messages: messagesToSend,
+        temperature: 0.6,
+        max_tokens: 200
+      })
+    });
 
-    try {
-      // Direct client-side fetch to AIRAWAT
-      const directRes = await fetch('https://apis.airawat.cdac.in/cdot-gemma4-12b/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer eyJ0eXAVlMQ',
-          'Cookie': 'SERVERID=api-manager'
-        },
-        body: JSON.stringify({
-          messages: formattedMessages,
-          stream: false,
-          temperature: 0.5,
-          max_tokens: 250
-        }),
-        signal: AbortSignal.timeout(10000)
-      });
-
-      if (directRes.ok) {
-        const directData = await directRes.json();
-        if (directData.choices && directData.choices[0] && directData.choices[0].message) {
-          replyText = (directData.choices[0].message.content || '').trim();
-        }
-      }
-    } catch (e) {
-      console.warn('Direct AIRAWAT connection failed, trying portal gateway proxy...', e);
-    }
-
-    // Gateway fallback if direct browser fetch didn't return
-    if (!replyText) {
-      const llmRes = await fetch('/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${activeApiKey}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          model: 'cdot-gemma4-12b',
-          messages: messagesToSend,
-          temperature: 0.5,
-          max_tokens: 250
-        })
-      });
-      const llmData = await llmRes.json();
-      replyText = (llmData.message && llmData.message.content) ? llmData.message.content.trim() : '';
-    }
+    const llmData = await llmRes.json();
+    let replyText = (llmData.message && llmData.message.content) ? llmData.message.content.trim() : '';
 
     if (!replyText) {
       replyText = langCfg.greeting;

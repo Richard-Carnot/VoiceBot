@@ -278,52 +278,43 @@ app.post('/v1/translate', authenticateKey, async (req, res) => {
   }
 });
 
-// ── LLM Chat Completion Endpoint (C-DOT Gemma 4 12B via AIRAWAT) ──
+// ── LLM Chat Completion Endpoint (Qwen 3.6 27B via Groq LPU) ──
 app.post('/v1/chat/completions', authenticateKey, async (req, res) => {
   try {
-    const { messages, temperature = 0.5, max_tokens = 512 } = req.body;
+    const { messages, temperature = 0.6, max_tokens = 512 } = req.body;
 
-    const airawatUrl = process.env.AIRAWAT_LLM_URL || 'https://apis.airawat.cdac.in/cdot-gemma4-12b/v1/chat/completions';
-    const apiKey = process.env.AIRAWAT_LLM_API_KEY || 'eyJ0eXAVlMQ';
-    const cookie = process.env.AIRAWAT_LLM_COOKIE || 'SERVERID=api-manager';
-    const targetModel = process.env.AIRAWAT_LLM_MODEL || 'cdot-gemma4-12b';
+    const groqUrl = process.env.GROQ_API_URL || 'https://api.groq.com/openai/v1/chat/completions';
+    const apiKey = process.env.GROQ_API_KEY;
+    const targetModel = process.env.GROQ_MODEL || 'qwen/qwen3.6-27b';
 
-    // Format messages into structure expected by AIRAWAT C-DOT Gemma
+    // Format messages for Groq API
     const rawMessages = messages || [{ role: 'user', content: req.body.prompt || 'Hello' }];
-    const formattedMessages = rawMessages.map(m => {
-      if (Array.isArray(m.content)) return m;
-      return {
-        role: m.role,
-        content: [
-          {
-            type: 'text',
-            text: typeof m.content === 'string' ? m.content : JSON.stringify(m.content)
-          }
-        ]
-      };
-    });
+    const formattedMessages = rawMessages.map(m => ({
+      role: m.role,
+      content: typeof m.content === 'string' ? m.content : (Array.isArray(m.content) ? (m.content[0]?.text || JSON.stringify(m.content)) : JSON.stringify(m.content))
+    }));
 
-    const airawatPayload = {
+    const groqPayload = {
+      model: targetModel,
       messages: formattedMessages,
-      stream: false,
       temperature: temperature,
-      max_tokens: max_tokens
+      max_completion_tokens: max_tokens,
+      stream: false
     };
 
-    const response = await fetch(airawatUrl, {
+    const response = await fetch(groqUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`,
-        'Cookie': cookie
+        'Authorization': `Bearer ${apiKey}`
       },
-      body: JSON.stringify(airawatPayload),
-      signal: AbortSignal.timeout(10000)
+      body: JSON.stringify(groqPayload),
+      signal: AbortSignal.timeout(15000)
     });
 
     if (!response.ok) {
       const errText = await response.text();
-      throw new Error(`AIRAWAT API error ${response.status}: ${errText}`);
+      throw new Error(`Groq API error ${response.status}: ${errText}`);
     }
 
     const data = await response.json();
@@ -333,6 +324,9 @@ app.post('/v1/chat/completions', authenticateKey, async (req, res) => {
     } else if (data.message && data.message.content) {
       replyContent = data.message.content;
     }
+
+    // Strip out <think>...</think> reasoning tags so only clean spoken response is sent
+    replyContent = replyContent.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
 
     return res.json({
       model: targetModel,
@@ -362,7 +356,7 @@ app.get('/api/status', (req, res) => {
       { name: 'Speech-to-Text (STT)', port: 8091, status: 'active', model: 'CR_stt1' },
       { name: 'Text-to-Speech (TTS)', port: 8092, status: 'active', model: 'CR_voice1' },
       { name: 'Translation NMT', port: 8000, status: 'active', model: 'CR_trans' },
-      { name: 'Conversational LLM', port: 443, status: 'active', model: 'C-DOT Gemma 4 (12B) [AIRAWAT]' }
+      { name: 'Conversational LLM', port: 443, status: 'active', model: 'Qwen 3.6 (27B) [Groq LPU]' }
     ]
   });
 });
