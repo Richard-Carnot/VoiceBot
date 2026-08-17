@@ -379,20 +379,21 @@ app.post('/v1/chat/completions', authenticateKey, async (req, res) => {
       messages: formattedMessages
     });
 
-    // Call Local Ollama Engine on Port 11434
+    // Call Local Ollama Engine on Port 11434 with persistent GPU keep-alive
     const ollamaResponse = await fetch('http://127.0.0.1:11434/api/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         model: targetModel,
         messages: formattedMessages,
+        keep_alive: '24h',
         options: {
           temperature: temperature,
           num_predict: max_tokens
         },
         stream: false
       }),
-      signal: AbortSignal.timeout(10000)
+      signal: AbortSignal.timeout(30000)
     });
 
     if (!ollamaResponse.ok) {
