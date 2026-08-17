@@ -317,7 +317,8 @@ app.post('/v1/chat/completions', authenticateKey, async (req, res) => {
         'Authorization': `Bearer ${apiKey}`,
         'Cookie': cookie
       },
-      body: JSON.stringify(airawatPayload)
+      body: JSON.stringify(airawatPayload),
+      signal: AbortSignal.timeout(10000)
     });
 
     if (!response.ok) {

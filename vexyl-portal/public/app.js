@@ -1067,7 +1067,8 @@ Keep your response short, natural, friendly, and spoken-friendly (1-2 sentences 
           stream: false,
           temperature: 0.5,
           max_tokens: 250
-        })
+        }),
+        signal: AbortSignal.timeout(10000)
       });
 
       if (directRes.ok) {
