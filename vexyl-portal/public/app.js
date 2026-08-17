@@ -1016,14 +1016,20 @@ async function processAgentUserQuery(userText) {
 
   const langCode = document.getElementById('agentLangSelect').value || 'hi-IN';
   const voice = document.getElementById('agentVoiceSelect').value || 'CR_voice1';
-  const langCfg = langConfigMap[langCode] || { name: 'Tamil', script: 'Tamil script (தமிழ்)' };
+  const langCfg = langConfigMap[langCode] || langConfigMap['hi-IN'];
 
-  // Strict language system prompt
-  const systemInstruction = `You are Carnot Voice AI, an intelligent, conversational, real-time voice assistant.
-CRITICAL LANGUAGE RULE: The user is communicating in ${langCfg.name}.
-You MUST ALWAYS respond EXCLUSIVELY in ${langCfg.name} using native ${langCfg.script}.
-DO NOT use Chinese, English, or any other language characters.
+  // Dynamic language prompt instruction
+  let systemInstruction = '';
+  if (langCode === 'en-IN') {
+    systemInstruction = `You are Carnot Voice AI, an intelligent, conversational, real-time voice assistant.
+The user is speaking in English. You MUST respond ONLY in natural, fluent, spoken English.
+Keep your response short, friendly, and conversational (1-2 sentences maximum) so it sounds natural when spoken aloud.`;
+  } else {
+    systemInstruction = `You are Carnot Voice AI, an intelligent, conversational, real-time voice assistant.
+The user is communicating in ${langCfg.name}. You MUST ALWAYS respond EXCLUSIVELY in ${langCfg.name} using native ${langCfg.script}.
+DO NOT use Chinese, English, or any other foreign script.
 Keep your response short, natural, friendly, and spoken-friendly (1-2 sentences maximum) so it sounds smooth when spoken aloud.`;
+  }
 
   agentConversationHistory.push({ role: 'user', content: userText });
 
@@ -1081,7 +1087,7 @@ Keep your response short, natural, friendly, and spoken-friendly (1-2 sentences 
     if (ttsData.audio_b64) {
       playAgentAudio(ttsData.audio_b64);
     } else {
-      setAgentState('idle', 'Speech synthesis complete (Text-only)');
+      setAgentState('idle', 'Spoken response complete.');
     }
   } catch (err) {
     setAgentState('idle', 'Error: ' + err.message);
