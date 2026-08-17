@@ -391,7 +391,10 @@ app.post('/v1/chat/completions', authenticateKey, async (req, res) => {
       contents: contents,
       generationConfig: {
         temperature: temperature,
-        maxOutputTokens: max_tokens
+        maxOutputTokens: Math.max(max_tokens, 2048),
+        thinkingConfig: {
+          thinkingBudget: 0
+        }
       }
     };
 

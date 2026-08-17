@@ -1056,7 +1056,7 @@ Keep your response short, natural, friendly, and spoken-friendly (1-2 sentences 
         model: 'gemini-2.5-flash',
         messages: messagesToSend,
         temperature: 0.6,
-        max_tokens: 200
+        max_tokens: 1024
       })
     });
 
